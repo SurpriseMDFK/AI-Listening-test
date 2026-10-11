@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TOEIC 聽力測驗系統</title>
+    <style>
+        :root { --primary: #0056b3; --bg: #f4f7f6; --card-bg: #ffffff; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 15px; color: #333; line-height: 1.6; }
+        .container { max-width: 600px; margin: 0 auto; background: var(--card-bg); padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        h1, h2 { text-align: center; color: var(--primary); }
+        .section { margin-bottom: 20px; padding: 15px; background: #eef2f5; border-radius: 8px; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; }
+        input[type="text"], input[type="password"] { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        input[type="file"] { width: 100%; padding: 10px 0; }
+        button { width: 100%; background: var(--primary); color: white; border: none; padding: 12px; font-size: 16px; border-radius: 5px; cursor: pointer; margin-top: 10px; font-weight: bold; transition: 0.3s; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        button:hover:not(:disabled) { background: #004494; }
+        .question-block { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #ddd; }
+        .option { margin-bottom: 10px; display: flex; align-items: center; }
+        .option input { margin-right: 10px; width: 20px; height: 20px; }
+        #status { text-align: center; font-weight: bold; margin: 10px 0; color: #d9534f; }
+        #audio-section, #quiz-section, #result-section, #transcript-section { display: none; }
+        .transcript-line { margin-bottom: 8px; }
+        .speaker-A { color: #0056b3; font-weight: bold; }
+        .speaker-B { color: #d9534f; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>TOEIC 聽力練習</h1>
+    
+    <!-- 設定區 -->
+    <div class="section" id="setup-section">
+        <label for="apiKey">ElevenLabs API Key:</label>
+        <input type="password" id="apiKey" placeholder="輸入您的 API Key">
+        
+        <label for="fileInput">載入測驗檔 (.txt):</label>
+        <input type="file" id="fileInput" accept=".txt,.json">
+        
+        <button id="loadBtn">載入並生成聽力音檔</button>
+        <div id="status"></div>
+    </div>
+
+    <!-- 播放區 -->
+    <div class="section" id="audio-section">
+        <h2>聽力音檔</h2>
+        <button id="playBtn">▶️ 播放對話</button>
+        <p style="text-align:center; font-size:14px; color:#666;">(測驗開始前，請先聽完對話)</p>
+    </div>
+
+    <!-- 測驗區 -->
+    <div class="section" id="quiz-section">
+        <h2>測驗題目</h2>
+        <div id="questions-container"></div>
+        <button id="submitBtn">提交答案</button>
+    </div>
+
+    <!-- 結果與逐字稿區 -->
+    <div class="section" id="result-section">
+        <h2 id="score-display"></h2>
+        <button id="showTranscriptBtn">顯示對話逐字稿</button>
+    </div>
+
+    <div class="section" id="transcript-section">
+        <h2>逐字稿</h2>
+        <div id="transcript-container"></div>
+    </div>
+</div>
+
+<script>
+    let testData = null;
+    let audioBlobs = [];
+    let currentAudioObj = new Audio();
+    let isPlaying = false;
+
+    // DOM Elements
+    const fileInput = document.getElementById('fileInput');
+    const loadBtn = document.getElementById('loadBtn');
+    const statusDiv = document.getElementById('status');
+    const playBtn = document.getElementById('playBtn');
+    
+    // 初始化：嘗試從 localStorage 讀取 API Key
+    window.onload = () => {
+        const savedKey = localStorage.getItem('elevenLabsApiKey');
+        if (savedKey) document.getElementById('apiKey').value = savedKey;
+    };
+
+    // 載入與生成音檔
+    loadBtn.addEventListener('click', async () => {
+        const apiKey = document.getElementById('apiKey').value.trim();
+        const file = fileInput.files[0];
+
+        if (!apiKey) return alert("請輸入 API Key");
+        if (!file) return alert("請選擇測驗檔案");
+
+        localStorage.setItem('elevenLabsApiKey', apiKey); // 記住金鑰
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            try {
+                testData = JSON.parse(e.target.result);
+                await generateAudios(apiKey, testData);
+            } catch (error) {
+                statusDiv.innerText = "檔案格式錯誤或生成失敗：" + error.message;
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    // 串接 ElevenLabs API (依序生成避免 Rate Limit)
+    async function generateAudios(apiKey, data) {
+        statusDiv.style.color = "#0056b3";
+        statusDiv.innerText = "正在向 ElevenLabs 生成音檔，請稍候...";
+        loadBtn.disabled = true;
+        audioBlobs = [];
+
+        try {
+            for (let i = 0; i < data.dialogue.length; i++) {
+                const line = data.dialogue[i];
+                const voiceId = line.speaker === 'A' ? data.voice_A : data.voice_B;
+                
+                statusDiv.innerText = `生成進度: ${i + 1} / ${data.dialogue.length}...`;
+
+                const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                    method: 'POST',
+                    headers: {
+                        'xi-api-key': apiKey,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: line.text,
+                        model_id: "eleven_multilingual_v2" // 支援多國語言與自然語調
+                    })
+                });
+
+                if (!response.ok) throw new Error(`API 錯誤: ${response.status}`);
+
+                const blob = await response.blob();
+                audioBlobs.push(URL.createObjectURL(blob));
+            }
+
+            statusDiv.innerText = "音檔生成完成！";
+            setTimeout(() => { document.getElementById('setup-section').style.display = 'none'; }, 1000);
+            
+            document.getElementById('audio-section').style.display = 'block';
+            document.getElementById('quiz-section').style.display = 'block';
+            renderQuiz(data.questions);
+            renderTranscript(data.dialogue);
+
+        } catch (error) {
+            statusDiv.style.color = "#d9534f";
+            statusDiv.innerText = "生成失敗：" + error.message;
+            loadBtn.disabled = false;
+        }
+    }
+
+    // 連續播放音檔邏輯
+    playBtn.addEventListener('click', () => {
+        if (isPlaying) return;
+        isPlaying = true;
+        playBtn.innerText = "播放中...";
+        playBtn.disabled = true;
+
+        let index = 0;
+        function playNext() {
+            if (index < audioBlobs.length) {
+                currentAudioObj.src = audioBlobs[index];
+                currentAudioObj.play();
+                currentAudioObj.onended = () => {
+                    index++;
+                    // 對話之間的微小停頓
+                    setTimeout(playNext, 300);
+                };
+            } else {
+                isPlaying = false;
+                playBtn.innerText = "▶️ 重新播放";
+                playBtn.disabled = false;
+            }
+        }
+        playNext();
+    });
+
+    // 渲染題目
+    function renderQuiz(questions) {
+        const container = document.getElementById('questions-container');
+        container.innerHTML = '';
+        
+        questions.forEach((q, qIndex) => {
+            const qBlock = document.createElement('div');
+            qBlock.className = 'question-block';
+            qBlock.innerHTML = `<h3>${qIndex + 1}. ${q.question}</h3>`;
+            
+            q.options.forEach((opt, optIndex) => {
+                const optId = `q${qIndex}_opt${optIndex}`;
+                qBlock.innerHTML += `
+                    <label class="option" for="${optId}">
+                        <input type="radio" name="q${qIndex}" id="${optId}" value="${optIndex}">
+                        ${opt}
+                    </label>
+                `;
+            });
+            container.appendChild(qBlock);
+        });
+    }
+
+    // 渲染逐字稿
+    function renderTranscript(dialogue) {
+        const container = document.getElementById('transcript-container');
+        container.innerHTML = '';
+        dialogue.forEach(line => {
+            const div = document.createElement('div');
+            div.className = 'transcript-line';
+            div.innerHTML = `<span class="speaker-${line.speaker}">${line.speaker}:</span> ${line.text}`;
+            container.appendChild(div);
+        });
+    }
+
+    // 批改答案
+    document.getElementById('submitBtn').addEventListener('click', () => {
+        let score = 0;
+        let total = testData.questions.length;
+        
+        testData.questions.forEach((q, index) => {
+            const selected = document.querySelector(`input[name="q${index}"]:checked`);
+            if (selected && parseInt(selected.value) === q.answer) {
+                score++;
+            }
+        });
+
+        document.getElementById('result-section').style.display = 'block';
+        document.getElementById('score-display').innerText = `你的分數：${score} / ${total}`;
+        document.getElementById('submitBtn').disabled = true;
+    });
+
+    // 顯示逐字稿
+    document.getElementById('showTranscriptBtn').addEventListener('click', () => {
+        document.getElementById('transcript-section').style.display = 'block';
+        document.getElementById('showTranscriptBtn').style.display = 'none';
+    });
+</script>
+</body>
+</html>
