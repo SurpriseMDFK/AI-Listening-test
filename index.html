@@ -109,7 +109,7 @@
         reader.readAsText(file);
     });
 
-    // 串接 ElevenLabs API (依序生成避免 Rate Limit)
+// 串接 ElevenLabs API (依序生成避免 Rate Limit)
     async function generateAudios(apiKey, data) {
         statusDiv.style.color = "#0056b3";
         statusDiv.innerText = "正在向 ElevenLabs 生成音檔，請稍候...";
@@ -131,11 +131,21 @@
                     },
                     body: JSON.stringify({
                         text: line.text,
-                        model_id: "eleven_multilingual_v2" // 支援多國語言與自然語調
+                        // 2026 建議模型: eleven_multilingual_v2 (自然度佳) 或 eleven_flash_v2_5 (生成最快)
+                        model_id: "eleven_multilingual_v2" 
                     })
                 });
 
-                if (!response.ok) throw new Error(`API 錯誤: ${response.status}`);
+                // 錯誤捕捉處理 (特別針對免費版無法使用 Library Voices 的限制)
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    let errMsg = `API 錯誤: ${response.status}`;
+                    
+                    if (errorText.includes("payment_required") || response.status === 403) {
+                        errMsg = "免費版 API 權限不足！請確保您 JSON 檔內的 Voice ID 是「官方預設語音(Premade)」，而不是社群語音(Library Voice)。";
+                    }
+                    throw new Error(errMsg);
+                }
 
                 const blob = await response.blob();
                 audioBlobs.push(URL.createObjectURL(blob));
