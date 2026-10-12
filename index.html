@@ -46,11 +46,13 @@
     </div>
 
     <div class="section">
-        <label>3. 聽力生成與播放</label>
-        <button id="generateBtn" onclick="generateAllAudio()" disabled>生成聽力音檔 (Gemini 3.8 Flash Lite TTS)</button>
-        <div class="status" id="status">請先載入文字檔</div>
-        <button id="playBtn" onclick="playDialogue()" class="success" disabled>▶️ 播放完整對話</button>
-    </div>
+    <label>3. 聽力生成與播放</label>
+    <button id="generateBtn" onclick="generateAllAudio()" disabled>生成聽力音檔 (Gemini TTS)</button>
+    <div class="status" id="status">請先載入題目檔案</div>
+    
+    <!-- 原生播放器：解決行動裝置相容性，還能查看進度條與拖曳時間 -->
+    <audio id="audioPlayer" controls style="width: 100%; display: none; margin-top: 10px;"></audio>
+</div>
 
     <div class="quiz-container" id="quizContainer">
         <div class="section">
@@ -176,29 +178,75 @@
         document.getElementById('quizContainer').style.display = 'block';
     }
 
-// 1. 單次呼叫 Multi-Speaker API (一次生成整段對話音檔)
+// --- 核心工具：將 Base64 PCM / WAV 自動封裝成標準可播放的 WAV Blob ---
+function base64ToWavBlob(base64Data, sampleRate = 24000) {
+    const binaryString = atob(base64Data);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // 檢查前 4 個 Byte 是否已有 'RIFF'（若已有標頭直接返回）
+    if (bytes.length >= 4 &&
+        bytes[0] === 0x52 && bytes[1] === 0x49 &&
+        bytes[2] === 0x46 && bytes[3] === 0x46) {
+        return new Blob([bytes], { type: 'audio/wav' });
+    }
+
+    // 若為原始 PCM (audio/L16)，主動添加 44-byte WAV RIFF Header
+    const numChannels = 1;
+    const bitDepth = 16;
+    const byteRate = sampleRate * numChannels * (bitDepth / 8);
+    const blockAlign = numChannels * (bitDepth / 8);
+    const buffer = new ArrayBuffer(44 + bytes.length);
+    const view = new DataView(buffer);
+
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
+        }
+    }
+
+    // RIFF 標頭
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + bytes.length, true);
+    writeString(view, 8, 'WAVE');
+
+    // fmt 子標頭
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM 格式
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+
+    // data 子標頭
+    writeString(view, 36, 'data');
+    view.setUint32(40, bytes.length, true);
+
+    // 寫入 PCM 數據
+    new Uint8Array(buffer, 44).set(bytes);
+
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
+// --- 呼叫 Gemini Multi-Speaker API ---
 async function callGeminiMultiSpeakerTTS(dialogueText, voiceA, voiceB, apiKey) {
-    // 可使用 gemini-3.8-flash-lite-tts 或 gemini-2.5-flash-preview-tts
-    const model = 'gemini-2.5-flash-preview-tts';
+    const model = 'gemini-3.5-pro-tts';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
-        contents: [{
-            parts: [{ text: dialogueText }]
-        }],
+        contents: [{ parts: [{ text: dialogueText }] }],
         generationConfig: {
             responseModalities: ["AUDIO"],
             speechConfig: {
                 multiSpeakerVoiceConfig: {
                     speakerVoiceConfigs: [
-                        {
-                            speaker: "A",
-                            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceA } }
-                        },
-                        {
-                            speaker: "B",
-                            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceB } }
-                        }
+                        { speaker: "A", voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceA } } },
+                        { speaker: "B", voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceB } } }
                     ]
                 }
             }
@@ -217,12 +265,13 @@ async function callGeminiMultiSpeakerTTS(dialogueText, voiceA, voiceB, apiKey) {
     }
 
     const data = await response.json();
+    if (!data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+        throw new Error("API 未回傳音訊資料，請檢查 API Key 或模型額度。");
+    }
     return data.candidates[0].content.parts[0].inlineData.data;
 }
 
-let singleAudioElement = null;
-
-// 2. 改造後的生成邏輯：只發送 1 次請求！
+// --- 生成音檔 ---
 async function generateAllAudio() {
     const apiKey = document.getElementById('apiKey').value.trim();
     if (!apiKey) return alert("請輸入 API Key");
@@ -230,28 +279,33 @@ async function generateAllAudio() {
     
     const btn = document.getElementById('generateBtn');
     const status = document.getElementById('status');
+    const player = document.getElementById('audioPlayer');
+
     btn.disabled = true;
-    status.innerText = '正在生成完整對話音檔 (僅消耗 1 次 API 配額)...';
+    player.style.display = 'none';
+    status.innerText = '正在生成完整對話音檔...';
 
     try {
-        // 抓取 A 與 B 各自對應的聲音
         const voiceA = voiceMap[`${parsedData.speakerA.gender}_${parsedData.speakerA.accent}`] || 'Puck';
         const voiceB = voiceMap[`${parsedData.speakerB.gender}_${parsedData.speakerB.accent}`] || 'Kore';
 
-        // 將對話整理成格式文字傳入
         const fullDialogueText = parsedData.dialogue
             .map(d => `${d.speaker}: ${d.text}`)
             .join('\n');
 
-        // 發送單次請求
         const b64 = await callGeminiMultiSpeakerTTS(fullDialogueText, voiceA, voiceB, apiKey);
         
-        singleAudioElement = new Audio(`data:audio/wav;base64,${b64}`);
-        
-        status.innerText = '音檔生成完畢！請戴上耳機開始測驗。';
-        document.getElementById('playBtn').disabled = false;
+        // 透過轉換器建立標準 WAV Blob URL
+        const wavBlob = base64ToWavBlob(b64, 24000);
+        const audioUrl = URL.createObjectURL(wavBlob);
+
+        // 綁定到原生播放器
+        player.src = audioUrl;
+        player.style.display = 'block';
+        status.innerText = '音檔生成完畢！可使用下方播放器開始聽力測驗。';
     } catch (err) {
         status.innerText = '生成失敗：' + err.message;
+        alert("錯誤詳情: " + err.message);
     } finally {
         btn.disabled = false;
     }
