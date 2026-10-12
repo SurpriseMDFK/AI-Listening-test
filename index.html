@@ -235,7 +235,7 @@ function base64ToWavBlob(base64Data, sampleRate = 24000) {
 
 // --- 呼叫 Gemini Multi-Speaker API ---
 async function callGeminiMultiSpeakerTTS(dialogueText, voiceA, voiceB, apiKey) {
-    const model = 'gemini-3.5-pro-tts';
+    const model = 'gemini-2.5-pro-tts';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
