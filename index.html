@@ -1,630 +1,337 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#0056b3">
-    <title>TOEIC 聽力測驗系統</title>
-    <style>
-        :root {
-            --primary: #0056b3;
-            --primary-dark: #004494;
-            --bg: #f4f7f6;
-            --card-bg: #fff;
-            --text: #333;
-            --muted: #666;
-            --border: #d7dde2;
-            --success: #18794e;
-            --error: #b42318;
-        }
-        * { box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg);
-            margin: 0;
-            padding: 15px;
-            color: var(--text);
-            line-height: 1.6;
-        }
-        .container {
-            max-width: 680px;
-            margin: 0 auto;
-            background: var(--card-bg);
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 10px rgba(0,0,0,.1);
-        }
-        h1, h2 { text-align: center; color: var(--primary); }
-        h1 { font-size: 1.6rem; }
-        h2 { font-size: 1.25rem; }
-        .section {
-            margin-bottom: 20px;
-            padding: 15px;
-            background: #eef2f5;
-            border-radius: 8px;
-        }
-        label { font-weight: 600; display: block; margin-bottom: 5px; }
-        input[type="text"], input[type="password"], input[type="file"], select {
-            width: 100%;
-            padding: 10px;
-            margin: 4px 0 12px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background: #fff;
-            font-size: 16px;
-        }
-        button {
-            width: 100%;
-            background: var(--primary);
-            color: #fff;
-            border: none;
-            padding: 12px;
-            font-size: 16px;
-            border-radius: 5px;
-            cursor: pointer;
-            margin-top: 10px;
-            font-weight: 700;
-            transition: background .2s;
-        }
-        button:disabled { background: #aaa; cursor: not-allowed; }
-        button:hover:not(:disabled) { background: var(--primary-dark); }
-        button.secondary { background: #596579; }
-        button.secondary:hover:not(:disabled) { background: #424d5f; }
-        button.danger { background: #a93226; }
-        button.danger:hover:not(:disabled) { background: #84251c; }
-        .question-block { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #ddd; }
-        .option { margin: 9px 0; display: flex; align-items: flex-start; gap: 9px; font-weight: 400; }
-        .option input { margin-top: 5px; min-width: 18px; min-height: 18px; }
-        #status { text-align: center; font-weight: 600; margin: 10px 0; color: var(--error); white-space: pre-wrap; overflow-wrap: anywhere; }
-        #audio-section, #quiz-section, #result-section, #transcript-section { display: none; }
-        .transcript-line { margin-bottom: 8px; }
-        .speaker-A { color: #0056b3; font-weight: 700; }
-        .speaker-B { color: #b42318; font-weight: 700; }
-        .hint { font-size: 13px; color: var(--muted); margin-top: -6px; }
-        .cache-info { font-size: 14px; color: var(--muted); line-height: 1.5; }
-        .status-ok { color: var(--success) !important; }
-        .status-error { color: var(--error) !important; }
-        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        @media (max-width: 480px) {
-            body { padding: 8px; }
-            .container { padding: 12px; }
-            .section { padding: 12px; }
-            .row { grid-template-columns: 1fr; gap: 0; }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#155eef">
+<title>TOEIC 聽力練習｜免費 TTS 版</title>
+<style>
+:root{--primary:#155eef;--bg:#f4f7fb;--card:#fff;--text:#182230;--muted:#667085;--border:#d0d5dd;--red:#b42318;--green:#067647}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:760px;margin:0 auto}
+h1,h2{text-align:center;line-height:1.25}
+h1{font-size:1.6rem;color:var(--primary)}
+h2{font-size:1.2rem}
+.card{background:var(--card);border:1px solid #eaecf0;border-radius:14px;padding:16px;margin:14px 0;box-shadow:0 2px 8px #1018280a}
+label{display:block;font-weight:650;margin:10px 0 5px}
+input[type=file],select,input[type=range]{width:100%}
+select,button{font:inherit}
+select{padding:10px;border:1px solid var(--border);border-radius:8px;background:#fff;width:100%}
+button{border:0;border-radius:9px;padding:12px 14px;background:var(--primary);color:white;font-weight:700;cursor:pointer;min-height:44px}
+button.secondary{background:#344054}
+button.danger{background:#b42318}
+button:disabled{opacity:.5;cursor:not-allowed}
+.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#status{padding:10px;border-radius:8px;background:#f2f4f7;margin-top:10px;overflow-wrap:anywhere}
+#status.error{color:var(--red);background:#fef3f2}
+#status.ok{color:var(--green);background:#ecfdf3}
+.hint{color:var(--muted);font-size:.92rem}
+#player-section,#quiz-section,#result-section,#transcript-section{display:none}
+.question{padding:12px 0;border-bottom:1px solid #eaecf0}
+.option{display:flex;gap:9px;align-items:flex-start;font-weight:400;padding:5px 0}
+.option input{margin-top:5px;flex:0 0 auto}
+.speaker-A{color:#155eef;font-weight:750}.speaker-B{color:#b42318;font-weight:750}
+.line{padding:6px 0}
+.pill{display:inline-block;background:#eef4ff;color:#3538cd;padding:3px 9px;border-radius:999px;font-size:.82rem}
+@media(min-width:600px){.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid>div{min-width:0}}
+</style>
 </head>
 <body>
-<div class="container">
-    <h1>TOEIC 聽力練習</h1>
+<main>
+  <h1>TOEIC 聽力練習</h1>
+  <p class="hint" style="text-align:center">免費語音版：使用瀏覽器／裝置提供的語音，不呼叫 ElevenLabs，也不需要 API Key。</p>
 
-    <div class="section" id="setup-section">
-        <label for="apiKey">ElevenLabs API Key：</label>
-        <input type="password" id="apiKey" autocomplete="off" placeholder="只有需要生成新音檔時才需要輸入">
-        <p class="hint">API Key 只在本頁使用；若所有音檔都已快取，可以不填。若使用共用或公開裝置，請勿儲存金鑰。</p>
-
-        <label for="fileInput">載入測驗檔（目前支援 JSON 內容的 .txt 或 .json）：</label>
-        <input type="file" id="fileInput" accept=".txt,.json,application/json,text/plain">
-
-        <div class="row">
-            <div>
-                <label for="modelSelect">語音模型</label>
-                <select id="modelSelect">
-                    <option value="eleven_v3_conversational" selected>eleven_v3_conversational（原設定）</option>
-                </select>
-                <p class="hint">模型 ID 會納入快取鍵；更換模型會視為不同音檔。</p>
-            </div>
-            <div>
-                <label for="cacheActions">快取管理</label>
-                <button type="button" class="secondary" id="cacheInfoBtn">查看快取容量</button>
-                <button type="button" class="danger" id="clearCacheBtn">清除所有音檔快取</button>
-            </div>
-        </div>
-
-        <button id="loadBtn">載入測驗並取得音檔</button>
-        <div id="status" role="status" aria-live="polite"></div>
-        <div id="cacheInfo" class="cache-info"></div>
+  <section class="card" id="setup-section">
+    <h2>載入測驗</h2>
+    <label for="fileInput">測驗檔（JSON 內容，可使用 .json 或以 JSON 格式儲存的 .txt）</label>
+    <input id="fileInput" type="file" accept=".txt,.json,application/json,text/plain">
+    <div class="settings-grid">
+      <div>
+        <label for="voiceA">說話者 A 語音</label>
+        <select id="voiceA"></select>
+      </div>
+      <div>
+        <label for="voiceB">說話者 B 語音</label>
+        <select id="voiceB"></select>
+      </div>
+      <div>
+        <label for="rate">語速：<span id="rateLabel">1.0×</span></label>
+        <input id="rate" type="range" min="0.75" max="1.15" step="0.05" value="1">
+        <p class="hint">TOEIC 練習建議先從 0.9–1.0× 開始。</p>
+      </div>
+      <div>
+        <label for="gap">句間停頓</label>
+        <select id="gap">
+          <option value="250">短（0.25 秒）</option>
+          <option value="500" selected>標準（0.5 秒）</option>
+          <option value="800">較長（0.8 秒）</option>
+        </select>
+      </div>
     </div>
-
-    <div class="section" id="audio-section">
-        <h2>聽力音檔</h2>
-        <button id="playBtn">▶ 播放對話</button>
-        <p style="text-align:center;font-size:14px;color:#666;">（測驗開始前，請先聽完對話；可重複播放，重播不會重新呼叫 TTS API。）</p>
-        <p id="audioSummary" class="cache-info"></p>
+    <div class="actions">
+      <button id="loadBtn">載入測驗</button>
+      <button id="refreshVoicesBtn" class="secondary">重新載入語音清單</button>
     </div>
+    <div id="status" role="status" aria-live="polite">請先選擇測驗檔。若語音清單是空的，請確認裝置已安裝英文語音後再重新載入。</div>
+    <p class="hint">注意：部分裝置／瀏覽器的語音可能透過網路提供。此版本不會使用付費 TTS API，但不能保證每一種系統語音都完全離線。</p>
+  </section>
 
-    <div class="section" id="quiz-section">
-        <h2>測驗題目</h2>
-        <div id="questions-container"></div>
-        <button id="submitBtn">提交答案</button>
-        <button type="button" id="retryBtn" class="secondary">重新作答</button>
+  <section class="card" id="player-section">
+    <h2>聽力播放</h2>
+    <div class="actions">
+      <button id="playBtn">▶ 播放對話</button>
+      <button id="stopBtn" class="danger">停止</button>
     </div>
+    <p class="hint">語音由瀏覽器逐句合成；同一份測驗可重複播放，不會重複呼叫付費 TTS API。</p>
+  </section>
 
-    <div class="section" id="result-section">
-        <h2 id="score-display"></h2>
-        <button id="showTranscriptBtn">顯示對話逐字稿</button>
-    </div>
+  <section class="card" id="quiz-section">
+    <h2>測驗題目</h2>
+    <div id="questions-container"></div>
+    <button id="submitBtn">提交答案</button>
+  </section>
 
-    <div class="section" id="transcript-section">
-        <h2>逐字稿</h2>
-        <div id="transcript-container"></div>
-    </div>
-</div>
+  <section class="card" id="result-section">
+    <h2 id="score-display"></h2>
+    <button id="showTranscriptBtn" class="secondary">顯示／隱藏逐字稿</button>
+  </section>
+  <section class="card" id="transcript-section">
+    <h2>對話逐字稿</h2>
+    <div id="transcript-container"></div>
+  </section>
+</main>
 
 <script>
 (() => {
-    'use strict';
+  "use strict";
+  let testData = null;
+  let isPlaying = false;
+  let playToken = 0;
+  let availableVoices = [];
+  const $ = id => document.getElementById(id);
+  const status = $("status");
 
-    // IndexedDB stores each dialogue line as a Blob. The key includes text, voice,
-    // model and generation settings, so only an exact match reuses a cached clip.
-    const DB_NAME = 'toeicListeningAudioCache';
-    const DB_VERSION = 1;
-    const STORE_NAME = 'audioClips';
-    const CACHE_SCHEMA = 1;
-    const DEFAULT_MODEL = 'eleven_v3_conversational';
-    const PAUSE_BETWEEN_LINES_MS = 300;
+  function setStatus(message, kind = "") {
+    status.textContent = message;
+    status.className = kind;
+  }
 
-    let dbPromise;
-    let testData = null;
-    let audioBlobs = []; // Blob values, one per dialogue line
-    let currentAudioObj = new Audio();
-    let currentObjectUrl = null;
-    let isPlaying = false;
-    let stopRequested = false;
-
-    const fileInput = document.getElementById('fileInput');
-    const loadBtn = document.getElementById('loadBtn');
-    const statusDiv = document.getElementById('status');
-    const playBtn = document.getElementById('playBtn');
-    const apiKeyInput = document.getElementById('apiKey');
-    const modelSelect = document.getElementById('modelSelect');
-    const cacheInfoDiv = document.getElementById('cacheInfo');
-
-    function setStatus(message, kind = '') {
-        statusDiv.textContent = message;
-        statusDiv.className = kind ? `status-${kind}` : '';
+  function loadVoices() {
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+      setStatus("此瀏覽器不支援 Web Speech API。請改用支援語音合成的最新版 Chrome、Edge 或 Safari。", "error");
+      return;
     }
-
-    function openDatabase() {
-        if (!('indexedDB' in window)) {
-            return Promise.reject(new Error('此瀏覽器不支援 IndexedDB，無法啟用音檔快取。'));
-        }
-        if (dbPromise) return dbPromise;
-
-        dbPromise = new Promise((resolve, reject) => {
-            const request = indexedDB.open(DB_NAME, DB_VERSION);
-            request.onupgradeneeded = () => {
-                const database = request.result;
-                if (!database.objectStoreNames.contains(STORE_NAME)) {
-                    database.createObjectStore(STORE_NAME, { keyPath: 'key' });
-                }
-            };
-            request.onsuccess = () => {
-                const database = request.result;
-                database.onversionchange = () => database.close();
-                resolve(database);
-            };
-            request.onerror = () => reject(request.error || new Error('無法開啟 IndexedDB。'));
-            request.onblocked = () => {
-                console.warn('IndexedDB 開啟被其他分頁阻擋。');
-            };
-        });
-        return dbPromise;
+    availableVoices = window.speechSynthesis.getVoices();
+    const oldA = $("voiceA").value;
+    const oldB = $("voiceB").value;
+    for (const select of [$("voiceA"), $("voiceB")]) {
+      select.replaceChildren();
+      const english = availableVoices.filter(v => /^en(-|$)/i.test(v.lang));
+      const list = english.length ? english : availableVoices;
+      if (!list.length) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "尚未提供語音";
+        select.append(opt);
+        continue;
+      }
+      for (const voice of list) {
+        const opt = document.createElement("option");
+        opt.value = voice.voiceURI;
+        opt.textContent = `${voice.name} (${voice.lang})${voice.localService ? " · 裝置語音" : " · 可能使用網路"}`;
+        select.append(opt);
+      }
     }
-
-    function idbRequest(request) {
-        return new Promise((resolve, reject) => {
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = () => reject(request.error || new Error('IndexedDB 操作失敗。'));
-        });
+    if ([...$("voiceA").options].some(o => o.value === oldA)) $("voiceA").value = oldA;
+    if ([...$("voiceB").options].some(o => o.value === oldB)) $("voiceB").value = oldB;
+    if (!$("voiceA").value && availableVoices.length) $("voiceA").selectedIndex = 0;
+    if (!$("voiceB").value && availableVoices.length) $("voiceB").selectedIndex = Math.min(1, $("voiceB").options.length - 1);
+    if (availableVoices.length) {
+      setStatus(`已找到 ${availableVoices.length} 種系統語音。請選擇 A、B 的英文語音，再載入測驗。`, "ok");
+    } else {
+      setStatus("目前沒有可用語音。部分手機會延遲載入語音，請按「重新載入語音清單」；仍無語音時，請在系統設定中安裝英文語音。", "error");
     }
+  }
 
-    async function cacheGet(key) {
-        const db = await openDatabase();
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        return idbRequest(tx.objectStore(STORE_NAME).get(key));
+  function validateTest(data) {
+    if (!data || !Array.isArray(data.dialogue) || !Array.isArray(data.questions)) {
+      throw new Error("測驗檔格式不正確：必須包含 dialogue 與 questions 陣列。");
     }
+    data.dialogue.forEach((line, i) => {
+      if (!line || typeof line.text !== "string" || !line.text.trim()) {
+        throw new Error(`第 ${i + 1} 句對話缺少 text 文字。`);
+      }
+      if (!["A", "B"].includes(line.speaker)) {
+        throw new Error(`第 ${i + 1} 句 speaker 必須是 A 或 B。`);
+      }
+    });
+    data.questions.forEach((q, i) => {
+      if (!q || typeof q.question !== "string" || !Array.isArray(q.options) ||
+          !Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.options.length) {
+        throw new Error(`第 ${i + 1} 題格式不正確；answer 必須是 options 的零起始索引。`);
+      }
+    });
+  }
 
-    async function cachePut(record) {
-        const db = await openDatabase();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            tx.objectStore(STORE_NAME).put(record);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error || new Error('無法寫入音檔快取。'));
-            tx.onabort = () => reject(tx.error || new Error('音檔快取寫入已中止。'));
-        });
+  function getVoice(speaker) {
+    const id = speaker === "A" ? $("voiceA").value : $("voiceB").value;
+    return availableVoices.find(v => v.voiceURI === id) || null;
+  }
+
+  function speak(text, voice, token) {
+    return new Promise((resolve, reject) => {
+      if (token !== playToken) return resolve();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = voice?.lang || "en-US";
+      if (voice) utterance.voice = voice;
+      utterance.rate = Number($("rate").value);
+      utterance.pitch = 1;
+      utterance.onend = () => resolve();
+      utterance.onerror = event => {
+        if (token !== playToken || event.error === "canceled" || event.error === "interrupted") resolve();
+        else reject(new Error(`語音播放失敗：${event.error || "unknown error"}`));
+      };
+      window.speechSynthesis.speak(utterance);
+    });
+  }
+
+  async function playDialogue() {
+    if (!testData || isPlaying) return;
+    if (!availableVoices.length) loadVoices();
+    if (!availableVoices.length) {
+      setStatus("找不到系統語音，無法播放。請重新載入語音清單或安裝英文語音。", "error");
+      return;
     }
-
-    async function cacheGetAll() {
-        const db = await openDatabase();
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        return idbRequest(tx.objectStore(STORE_NAME).getAll());
-    }
-
-    async function cacheClear() {
-        const db = await openDatabase();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE_NAME, 'readwrite');
-            tx.objectStore(STORE_NAME).clear();
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error || new Error('清除快取失敗。'));
-            tx.onabort = () => reject(tx.error || new Error('清除快取已中止。'));
-        });
-    }
-
-    async function sha256(text) {
-        if (window.crypto && crypto.subtle && window.isSecureContext) {
-            const bytes = new TextEncoder().encode(text);
-            const hash = await crypto.subtle.digest('SHA-256', bytes);
-            return Array.from(new Uint8Array(hash))
-                .map(byte => byte.toString(16).padStart(2, '0')).join('');
+    isPlaying = true;
+    const token = ++playToken;
+    $("playBtn").disabled = true;
+    $("playBtn").textContent = "播放中…";
+    setStatus("正在逐句播放對話。", "");
+    try {
+      for (let i = 0; i < testData.dialogue.length; i++) {
+        if (token !== playToken) break;
+        const line = testData.dialogue[i];
+        await speak(line.text, getVoice(line.speaker), token);
+        if (token !== playToken) break;
+        if (i < testData.dialogue.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, Number($("gap").value)));
         }
-        // Fallback for local/non-secure contexts. This is a cache key, not a security hash.
-        let h1 = 0xdeadbeef ^ text.length;
-        let h2 = 0x41c6ce57 ^ text.length;
-        for (let i = 0; i < text.length; i++) {
-            const ch = text.charCodeAt(i);
-            h1 = Math.imul(h1 ^ ch, 2654435761);
-            h2 = Math.imul(h2 ^ ch, 1597334677);
-        }
-        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^
-             Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^
-             Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-        return 'fallback-' + (h2 >>> 0).toString(16) + (h1 >>> 0).toString(16);
-    }
-
-    async function makeCacheKey(line, data, modelId) {
-        const voiceId = line.speaker === 'A' ? data.voice_A : data.voice_B;
-        if (!voiceId) throw new Error(`說話者 ${line.speaker} 缺少對應的 voice ID。`);
-        // Include all parameters that affect the generated audio.
-        const canonical = JSON.stringify({
-            schema: CACHE_SCHEMA,
-            text: String(line.text),
-            speaker: String(line.speaker),
-            voiceId: String(voiceId),
-            modelId,
-            outputFormat: 'default',
-            voiceSettings: null
-        });
-        return { key: await sha256(canonical), voiceId };
-    }
-
-    function validateTestData(data) {
-        if (!data || typeof data !== 'object') {
-            throw new Error('測驗檔最外層必須是 JSON 物件。');
-        }
-        if (!Array.isArray(data.dialogue) || data.dialogue.length === 0) {
-            throw new Error('測驗檔必須包含非空的 dialogue 陣列。');
-        }
-        if (!Array.isArray(data.questions) || data.questions.length === 0) {
-            throw new Error('測驗檔必須包含非空的 questions 陣列。');
-        }
-        if (!data.voice_A || !data.voice_B) {
-            throw new Error('測驗檔必須提供 voice_A 與 voice_B。');
-        }
-        data.dialogue.forEach((line, i) => {
-            if (!line || typeof line.text !== 'string' || !line.text.trim()) {
-                throw new Error(`第 ${i + 1} 句對話缺少有效的 text。`);
-            }
-            if (!['A', 'B'].includes(line.speaker)) {
-                throw new Error(`第 ${i + 1} 句對話的 speaker 必須是 A 或 B。`);
-            }
-        });
-        data.questions.forEach((q, i) => {
-            if (!q || typeof q.question !== 'string' || !Array.isArray(q.options) || q.options.length < 2) {
-                throw new Error(`第 ${i + 1} 題的格式不正確。`);
-            }
-            if (!Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.options.length) {
-                throw new Error(`第 ${i + 1} 題的 answer 必須是從 0 開始的選項索引。`);
-            }
-        });
-    }
-
-    async function requestAudio(apiKey, line, voiceId, modelId) {
-        const response = await fetch(
-            `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`,
-            {
-                method: 'POST',
-                headers: {
-                    'xi-api-key': apiKey,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    text: line.text,
-                    model_id: modelId
-                })
-            }
-        );
-
-        if (!response.ok) {
-            let details = '';
-            try {
-                const body = await response.json();
-                details = body?.detail?.message || body?.detail?.status || body?.message || '';
-            } catch (_) {}
-            throw new Error(`ElevenLabs API 錯誤：HTTP ${response.status}${details ? ' — ' + details : ''}`);
-        }
-        return response.blob();
-    }
-
-    async function getOrGenerateLineAudio(apiKey, line, data, modelId) {
-        const { key, voiceId } = await makeCacheKey(line, data, modelId);
-        const cached = await cacheGet(key);
-        if (cached && cached.blob instanceof Blob && cached.blob.size > 0) {
-            return { blob: cached.blob, cached: true, key };
-        }
-
-        if (!apiKey) {
-            throw new Error(`第 ${line.speaker} 句音檔尚未快取，請輸入 ElevenLabs API Key 後再生成。`);
-        }
-
-        const blob = await requestAudio(apiKey, line, voiceId, modelId);
-        if (!(blob instanceof Blob) || blob.size === 0) {
-            throw new Error('API 回傳的音檔是空的。');
-        }
-
-        // If caching fails (e.g. quota exceeded), still use the just-generated Blob for this session.
-        try {
-            await cachePut({
-                key,
-                blob,
-                text: line.text,
-                speaker: line.speaker,
-                voiceId,
-                modelId,
-                mimeType: blob.type || 'audio/mpeg',
-                size: blob.size,
-                createdAt: Date.now()
-            });
-        } catch (error) {
-            console.warn('音檔已生成，但寫入 IndexedDB 失敗：', error);
-        }
-        return { blob, cached: false, key };
-    }
-
-    async function generateAudios(apiKey, data) {
-        loadBtn.disabled = true;
-        playBtn.disabled = true;
-        document.getElementById('audio-section').style.display = 'none';
-        document.getElementById('quiz-section').style.display = 'none';
-        document.getElementById('result-section').style.display = 'none';
-        document.getElementById('transcript-section').style.display = 'none';
-        stopPlayback();
-        audioBlobs = [];
-
-        const modelId = modelSelect.value || DEFAULT_MODEL;
-        let cacheHits = 0;
-        let generated = 0;
-
-        try {
-            await openDatabase();
-            for (let i = 0; i < data.dialogue.length; i++) {
-                const line = data.dialogue[i];
-                setStatus(`正在取得音檔：${i + 1} / ${data.dialogue.length}\n已命中快取 ${cacheHits} 句；本次新生成 ${generated} 句。`);
-                const result = await getOrGenerateLineAudio(apiKey, line, data, modelId);
-                audioBlobs.push(result.blob);
-                if (result.cached) cacheHits++;
-                else generated++;
-            }
-
-            testData = data;
-            document.getElementById('audio-section').style.display = 'block';
-            document.getElementById('quiz-section').style.display = 'block';
-            renderQuiz(data.questions);
-            renderTranscript(data.dialogue);
-            document.getElementById('audioSummary').textContent =
-                `本次使用 ${data.dialogue.length} 句音檔：快取命中 ${cacheHits} 句，新生成 ${generated} 句。` +
-                (generated === 0 ? ' 本次沒有呼叫 TTS API，因此沒有新增 TTS 生成費用。' : '');
-            setStatus(
-                generated === 0
-                    ? `載入完成：全部 ${cacheHits} 句均使用快取，未呼叫 ElevenLabs TTS。`
-                    : `載入完成：快取 ${cacheHits} 句；新生成 ${generated} 句。`,
-                'ok'
-            );
-            await updateCacheInfo();
-        } catch (error) {
-            setStatus('載入或生成失敗：' + error.message, 'error');
-            // Do not leave a partial dialogue playable as if it were complete.
-            audioBlobs = [];
-            testData = null;
-        } finally {
-            loadBtn.disabled = false;
-            playBtn.disabled = audioBlobs.length === 0;
-        }
-    }
-
-    function releaseCurrentObjectUrl() {
-        if (currentObjectUrl) {
-            URL.revokeObjectURL(currentObjectUrl);
-            currentObjectUrl = null;
-        }
-    }
-
-    function stopPlayback() {
-        stopRequested = true;
+      }
+      if (token === playToken) setStatus("播放完成。可再次播放或開始作答。", "ok");
+    } catch (error) {
+      setStatus(error.message, "error");
+    } finally {
+      if (token === playToken) {
         isPlaying = false;
-        currentAudioObj.pause();
-        currentAudioObj.onended = null;
-        currentAudioObj.onerror = null;
-        currentAudioObj.removeAttribute('src');
-        currentAudioObj.load();
-        releaseCurrentObjectUrl();
-        playBtn.disabled = audioBlobs.length === 0;
-        playBtn.textContent = '▶ 播放對話';
+        $("playBtn").disabled = false;
+        $("playBtn").textContent = "▶ 重新播放對話";
+      }
     }
+  }
 
-    async function playAllLines() {
-        if (isPlaying || audioBlobs.length === 0) return;
-        isPlaying = true;
-        stopRequested = false;
-        playBtn.disabled = true;
-        playBtn.textContent = '播放中…';
+  function stopPlayback() {
+    playToken++;
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    isPlaying = false;
+    $("playBtn").disabled = false;
+    $("playBtn").textContent = "▶ 播放對話";
+    setStatus("已停止播放。", "");
+  }
 
-        try {
-            for (let i = 0; i < audioBlobs.length; i++) {
-                if (stopRequested) break;
-                releaseCurrentObjectUrl();
-                currentObjectUrl = URL.createObjectURL(audioBlobs[i]);
-                currentAudioObj.src = currentObjectUrl;
-                await new Promise((resolve, reject) => {
-                    currentAudioObj.onended = resolve;
-                    currentAudioObj.onerror = () => reject(new Error(`第 ${i + 1} 句音檔播放失敗。`));
-                    const playPromise = currentAudioObj.play();
-                    if (playPromise && typeof playPromise.catch === 'function') {
-                        playPromise.catch(reject);
-                    }
-                });
-                if (stopRequested) break;
-                if (i < audioBlobs.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, PAUSE_BETWEEN_LINES_MS));
-                }
-            }
-        } catch (error) {
-            setStatus(error.message, 'error');
-        } finally {
-            isPlaying = false;
-            releaseCurrentObjectUrl();
-            playBtn.disabled = audioBlobs.length === 0;
-            playBtn.textContent = '▶ 重新播放對話';
-        }
+  function renderQuiz(questions) {
+    const container = $("questions-container");
+    container.replaceChildren();
+    questions.forEach((q, qi) => {
+      const block = document.createElement("div");
+      block.className = "question";
+      const heading = document.createElement("h3");
+      heading.textContent = `${qi + 1}. ${q.question}`;
+      block.append(heading);
+      q.options.forEach((option, oi) => {
+        const label = document.createElement("label");
+        label.className = "option";
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = `q${qi}`;
+        input.value = String(oi);
+        const text = document.createElement("span");
+        text.textContent = String(option);
+        label.append(input, text);
+        block.append(label);
+      });
+      container.append(block);
+    });
+  }
+
+  function renderTranscript(dialogue) {
+    const container = $("transcript-container");
+    container.replaceChildren();
+    dialogue.forEach(line => {
+      const div = document.createElement("div");
+      div.className = "line";
+      const speaker = document.createElement("span");
+      speaker.className = `speaker-${line.speaker}`;
+      speaker.textContent = `${line.speaker}: `;
+      div.append(speaker, document.createTextNode(line.text));
+      container.append(div);
+    });
+  }
+
+  $("loadBtn").addEventListener("click", async () => {
+    const file = $("fileInput").files[0];
+    if (!file) {
+      setStatus("請先選擇測驗檔。", "error");
+      return;
     }
-
-    function renderQuiz(questions) {
-        const container = document.getElementById('questions-container');
-        container.replaceChildren();
-
-        questions.forEach((q, qIndex) => {
-            const block = document.createElement('div');
-            block.className = 'question-block';
-            const heading = document.createElement('h3');
-            heading.textContent = `${qIndex + 1}. ${q.question}`;
-            block.appendChild(heading);
-
-            q.options.forEach((option, optionIndex) => {
-                const label = document.createElement('label');
-                label.className = 'option';
-                const input = document.createElement('input');
-                input.type = 'radio';
-                input.name = `q${qIndex}`;
-                input.id = `q${qIndex}_opt${optionIndex}`;
-                input.value = String(optionIndex);
-                const text = document.createElement('span');
-                text.textContent = String(option);
-                label.htmlFor = input.id;
-                label.append(input, text);
-                block.appendChild(label);
-            });
-            container.appendChild(block);
-        });
-        document.getElementById('submitBtn').disabled = false;
+    $("loadBtn").disabled = true;
+    try {
+      const raw = await file.text();
+      const parsed = JSON.parse(raw.replace(/^\uFEFF/, ""));
+      validateTest(parsed);
+      testData = parsed;
+      stopPlayback();
+      renderQuiz(testData.questions);
+      renderTranscript(testData.dialogue);
+      $("player-section").style.display = "block";
+      $("quiz-section").style.display = "block";
+      $("result-section").style.display = "none";
+      $("transcript-section").style.display = "none";
+      setStatus(`已載入 ${testData.dialogue.length} 句對話與 ${testData.questions.length} 題。語音會在播放時即時合成，不會產生付費 API 用量。`, "ok");
+    } catch (error) {
+      testData = null;
+      setStatus(`載入失敗：${error.message}`, "error");
+    } finally {
+      $("loadBtn").disabled = false;
     }
+  });
 
-    function renderTranscript(dialogue) {
-        const container = document.getElementById('transcript-container');
-        container.replaceChildren();
-        dialogue.forEach(line => {
-            const div = document.createElement('div');
-            div.className = 'transcript-line';
-            const speaker = document.createElement('span');
-            speaker.className = `speaker-${line.speaker}`;
-            speaker.textContent = `${line.speaker}: `;
-            div.append(speaker, document.createTextNode(line.text));
-            container.appendChild(div);
-        });
-    }
-
-    async function updateCacheInfo() {
-        try {
-            const records = await cacheGetAll();
-            const totalBytes = records.reduce((sum, record) => sum + (record.size || record.blob?.size || 0), 0);
-            const mb = (totalBytes / (1024 * 1024)).toFixed(2);
-            cacheInfoDiv.textContent = `目前儲存 ${records.length} 句音檔，合計約 ${mb} MB。快取只會在同一個網站來源的此瀏覽器中共用。`;
-        } catch (error) {
-            cacheInfoDiv.textContent = '目前無法讀取快取資訊：' + error.message;
-        }
-    }
-
-    loadBtn.addEventListener('click', async () => {
-        const file = fileInput.files && fileInput.files[0];
-        if (!file) {
-            alert('請先選擇測驗檔案。');
-            return;
-        }
-
-        let data;
-        try {
-            const text = await file.text();
-            data = JSON.parse(text.replace(/^\uFEFF/, ''));
-            validateTestData(data);
-        } catch (error) {
-            setStatus('測驗檔格式錯誤：' + error.message, 'error');
-            return;
-        }
-
-        // API Key is only required for cache misses. Do not persist it by default.
-        const apiKey = apiKeyInput.value.trim();
-        await generateAudios(apiKey, data);
+  $("playBtn").addEventListener("click", playDialogue);
+  $("stopBtn").addEventListener("click", stopPlayback);
+  $("refreshVoicesBtn").addEventListener("click", loadVoices);
+  $("rate").addEventListener("input", () => $("rateLabel").textContent = `${Number($("rate").value).toFixed(2).replace(/0$/, "")}×`);
+  $("submitBtn").addEventListener("click", () => {
+    if (!testData) return;
+    let score = 0;
+    testData.questions.forEach((q, i) => {
+      const selected = document.querySelector(`input[name="q${i}"]:checked`);
+      if (selected && Number(selected.value) === q.answer) score++;
     });
+    $("score-display").textContent = `測驗結果：${score} / ${testData.questions.length}（${Math.round(score / testData.questions.length * 100)}%）`;
+    $("result-section").style.display = "block";
+    $("result-section").scrollIntoView({behavior:"smooth", block:"start"});
+  });
+  $("showTranscriptBtn").addEventListener("click", () => {
+    const section = $("transcript-section");
+    section.style.display = section.style.display === "block" ? "none" : "block";
+  });
 
-    playBtn.addEventListener('click', playAllLines);
-
-    document.getElementById('submitBtn').addEventListener('click', () => {
-        if (!testData) return;
-        let score = 0;
-        const total = testData.questions.length;
-
-        testData.questions.forEach((question, index) => {
-            const selected = document.querySelector(`input[name="q${index}"]:checked`);
-            if (selected && Number.parseInt(selected.value, 10) === question.answer) score++;
-        });
-
-        document.getElementById('result-section').style.display = 'block';
-        document.getElementById('score-display').textContent = `你的分數：${score} / ${total}`;
-        document.getElementById('submitBtn').disabled = true;
-    });
-
-    document.getElementById('retryBtn').addEventListener('click', () => {
-        if (!testData) return;
-        document.querySelectorAll('#questions-container input[type="radio"]').forEach(input => {
-            input.checked = false;
-        });
-        document.getElementById('result-section').style.display = 'none';
-        document.getElementById('transcript-section').style.display = 'none';
-        document.getElementById('showTranscriptBtn').style.display = 'block';
-        document.getElementById('submitBtn').disabled = false;
-    });
-
-    document.getElementById('showTranscriptBtn').addEventListener('click', () => {
-        document.getElementById('transcript-section').style.display = 'block';
-        document.getElementById('showTranscriptBtn').style.display = 'none';
-    });
-
-    document.getElementById('cacheInfoBtn').addEventListener('click', updateCacheInfo);
-
-    document.getElementById('clearCacheBtn').addEventListener('click', async () => {
-        const confirmed = confirm('確定清除這個網站在此瀏覽器中保存的所有 ElevenLabs 音檔快取？清除後，下次載入時需要重新生成音檔，可能再次消耗 Credits。');
-        if (!confirmed) return;
-        try {
-            await cacheClear();
-            await updateCacheInfo();
-            setStatus('音檔快取已清除。', 'ok');
-        } catch (error) {
-            setStatus('清除快取失敗：' + error.message, 'error');
-        }
-    });
-
-    window.addEventListener('beforeunload', () => {
-        stopRequested = true;
-        currentAudioObj.pause();
-        releaseCurrentObjectUrl();
-    });
-
-    openDatabase()
-        .then(updateCacheInfo)
-        .catch(error => {
-            setStatus('IndexedDB 尚未就緒：' + error.message, 'error');
-        });
+  if ("speechSynthesis" in window) {
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  } else {
+    setStatus("此瀏覽器不支援語音合成。請使用最新版 Safari、Chrome 或 Edge。", "error");
+  }
 })();
 </script>
 </body>
