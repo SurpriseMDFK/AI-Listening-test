@@ -176,87 +176,105 @@
         document.getElementById('quizContainer').style.display = 'block';
     }
 
-    // --- 呼叫 Gemini 3.8 Flash Lite TTS ---
-    async function callGeminiTTS(text, voiceName, apiKey) {
-        const model = 'gemini-3.8-flash-lite-tts';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const payload = {
-            contents: [{ parts: [{ text: text }] }],
-            generationConfig: {
-                responseModalities: ["AUDIO"],
-                speechConfig: {
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceName } }
+// 1. 單次呼叫 Multi-Speaker API (一次生成整段對話音檔)
+async function callGeminiMultiSpeakerTTS(dialogueText, voiceA, voiceB, apiKey) {
+    // 可使用 gemini-3.8-flash-lite-tts 或 gemini-2.5-flash-preview-tts
+    const model = 'gemini-2.5-flash-preview-tts';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const payload = {
+        contents: [{
+            parts: [{ text: dialogueText }]
+        }],
+        generationConfig: {
+            responseModalities: ["AUDIO"],
+            speechConfig: {
+                multiSpeakerVoiceConfig: {
+                    speakerVoiceConfigs: [
+                        {
+                            speaker: "A",
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceA } }
+                        },
+                        {
+                            speaker: "B",
+                            voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceB } }
+                        }
+                    ]
                 }
             }
-        };
-
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) throw new Error(`API 錯誤: HTTP ${response.status}`);
-        const data = await response.json();
-        return data.candidates[0].content.parts[0].inlineData.data;
-    }
-
-    async function generateAllAudio() {
-        const apiKey = document.getElementById('apiKey').value.trim();
-        if (!apiKey) return alert("請輸入 API Key");
-        
-        const btn = document.getElementById('generateBtn');
-        const status = document.getElementById('status');
-        btn.disabled = true;
-        audioElements = []; 
-        
-        try {
-            for (let i = 0; i < parsedData.dialogue.length; i++) {
-                const line = parsedData.dialogue[i];
-                status.innerText = `生成中... (${i + 1} / ${parsedData.dialogue.length})`;
-                
-                let spk = line.speaker === 'A' ? parsedData.speakerA : parsedData.speakerB;
-                let mapKey = `${spk.gender}_${spk.accent}`;
-                let voiceName = voiceMap[mapKey] || 'Puck'; // 找不到則使用預設男聲
-                
-                let b64 = await callGeminiTTS(line.text, voiceName, apiKey);
-                let audio = new Audio(`data:audio/wav;base64,${b64}`);
-                audio.preload = 'auto';
-                audioElements.push(audio);
-            }
-            status.innerText = '音檔生成完畢！請戴上耳機開始測驗。';
-            document.getElementById('playBtn').disabled = false;
-        } catch (err) {
-            status.innerText = '生成失敗：' + err.message;
-        } finally {
-            btn.disabled = false;
         }
+    };
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `HTTP ${response.status}`);
     }
 
-    // --- 音檔播放控制 ---
-    function playDialogue() {
-        if (audioElements.length === 0) return;
-        audioElements.forEach(a => { a.pause(); a.currentTime = 0; });
+    const data = await response.json();
+    return data.candidates[0].content.parts[0].inlineData.data;
+}
+
+let singleAudioElement = null;
+
+// 2. 改造後的生成邏輯：只發送 1 次請求！
+async function generateAllAudio() {
+    const apiKey = document.getElementById('apiKey').value.trim();
+    if (!apiKey) return alert("請輸入 API Key");
+    if (!parsedData) return alert("請先載入題目檔案");
+    
+    const btn = document.getElementById('generateBtn');
+    const status = document.getElementById('status');
+    btn.disabled = true;
+    status.innerText = '正在生成完整對話音檔 (僅消耗 1 次 API 配額)...';
+
+    try {
+        // 抓取 A 與 B 各自對應的聲音
+        const voiceA = voiceMap[`${parsedData.speakerA.gender}_${parsedData.speakerA.accent}`] || 'Puck';
+        const voiceB = voiceMap[`${parsedData.speakerB.gender}_${parsedData.speakerB.accent}`] || 'Kore';
+
+        // 將對話整理成格式文字傳入
+        const fullDialogueText = parsedData.dialogue
+            .map(d => `${d.speaker}: ${d.text}`)
+            .join('\n');
+
+        // 發送單次請求
+        const b64 = await callGeminiMultiSpeakerTTS(fullDialogueText, voiceA, voiceB, apiKey);
         
-        // 串接播放事件 (相容手機瀏覽器)
-        for (let i = 0; i < audioElements.length - 1; i++) {
-            audioElements[i].onended = () => audioElements[i+1].play();
-        }
+        singleAudioElement = new Audio(`data:audio/wav;base64,${b64}`);
         
-        const btn = document.getElementById('playBtn');
-        btn.disabled = true;
-        btn.innerText = '播放中...';
-        
-        audioElements[audioElements.length - 1].onended = () => {
-            btn.disabled = false;
-            btn.innerText = '▶️ 重新播放對話';
-        };
-        
-        audioElements[0].play().catch(e => {
-            alert("播放失敗，請檢查瀏覽器聲音權限");
-            btn.disabled = false;
-        });
+        status.innerText = '音檔生成完畢！請戴上耳機開始測驗。';
+        document.getElementById('playBtn').disabled = false;
+    } catch (err) {
+        status.innerText = '生成失敗：' + err.message;
+    } finally {
+        btn.disabled = false;
     }
+}
+
+// 3. 播放邏輯變得更簡單穩定
+function playDialogue() {
+    if (!singleAudioElement) return;
+    const btn = document.getElementById('playBtn');
+    btn.disabled = true;
+    btn.innerText = '播放中...';
+
+    singleAudioElement.currentTime = 0;
+    singleAudioElement.onended = () => {
+        btn.disabled = false;
+        btn.innerText = '▶️ 重新播放對話';
+    };
+
+    singleAudioElement.play().catch(e => {
+        alert("播放失敗，請檢查瀏覽器音訊權限");
+        btn.disabled = false;
+    });
+}
 
     // --- 測驗對答邏輯 ---
     function checkAnswers() {
