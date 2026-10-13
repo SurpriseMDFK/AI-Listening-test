@@ -230,7 +230,7 @@
     async function callGeminiMultiSpeakerTTS(dialogue, speakerA, speakerB, apiKey) {
         // Interactions API 的 schema 與舊版 GenerateContent 不同；為保證區域口音，
         // 只在官方支援同一格式的 Gemini 3.8 TTS 模型間備援。
-        const modelQueue = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'];
+        const modelQueue = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts','gemini-3.1-flash-tts-preview','gemini-2.5-pro-preview-tts'];
         if (!Array.isArray(dialogue) || dialogue.length === 0) throw new Error('對話內容為空，無法生成音訊。');
         if (!apiKey) throw new Error('缺少 Gemini API Key。');
 
