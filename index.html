@@ -1,338 +1,388 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#155eef">
-<title>TOEIC 聽力練習｜免費 TTS 版</title>
-<style>
-:root{--primary:#155eef;--bg:#f4f7fb;--card:#fff;--text:#182230;--muted:#667085;--border:#d0d5dd;--red:#b42318;--green:#067647}
-*{box-sizing:border-box}
-body{margin:0;padding:16px;background:var(--bg);color:var(--text);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:760px;margin:0 auto}
-h1,h2{text-align:center;line-height:1.25}
-h1{font-size:1.6rem;color:var(--primary)}
-h2{font-size:1.2rem}
-.card{background:var(--card);border:1px solid #eaecf0;border-radius:14px;padding:16px;margin:14px 0;box-shadow:0 2px 8px #1018280a}
-label{display:block;font-weight:650;margin:10px 0 5px}
-input[type=file],select,input[type=range]{width:100%}
-select,button{font:inherit}
-select{padding:10px;border:1px solid var(--border);border-radius:8px;background:#fff;width:100%}
-button{border:0;border-radius:9px;padding:12px 14px;background:var(--primary);color:white;font-weight:700;cursor:pointer;min-height:44px}
-button.secondary{background:#344054}
-button.danger{background:#b42318}
-button:disabled{opacity:.5;cursor:not-allowed}
-.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-#status{padding:10px;border-radius:8px;background:#f2f4f7;margin-top:10px;overflow-wrap:anywhere}
-#status.error{color:var(--red);background:#fef3f2}
-#status.ok{color:var(--green);background:#ecfdf3}
-.hint{color:var(--muted);font-size:.92rem}
-#player-section,#quiz-section,#result-section,#transcript-section{display:none}
-.question{padding:12px 0;border-bottom:1px solid #eaecf0}
-.option{display:flex;gap:9px;align-items:flex-start;font-weight:400;padding:5px 0}
-.option input{margin-top:5px;flex:0 0 auto}
-.speaker-A{color:#155eef;font-weight:750}.speaker-B{color:#b42318;font-weight:750}
-.line{padding:6px 0}
-.pill{display:inline-block;background:#eef4ff;color:#3538cd;padding:3px 9px;border-radius:999px;font-size:.82rem}
-@media(min-width:600px){.settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.settings-grid>div{min-width:0}}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOEIC 對話聽力測驗生成器 (Gemini 智慧備援版)</title>
+    <style>
+        :root { --primary: #2563eb; --bg: #f8fafc; --card: #ffffff; --text: #1e293b; --border: #e2e8f0; }
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; line-height: 1.6; }
+        .container { max-width: 600px; margin: auto; background: var(--card); padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.5rem; text-align: center; color: var(--primary); margin-top: 0; }
+        .section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+        .section:last-child { border-bottom: none; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; }
+        input[type="text"], input[type="password"], input[type="file"] { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 6px; }
+        button { background: var(--primary); color: white; border: none; padding: 12px 15px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; margin-bottom: 10px; font-weight: bold;}
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        button.secondary { background: #475569; }
+        button.success { background: #10b981; }
+        .status { text-align: center; font-size: 0.9rem; color: #64748b; margin-bottom: 10px; font-weight: bold; min-height: 1.5em;}
+        .quiz-container { display: none; }
+        .question { margin-bottom: 20px; }
+        .question p { font-weight: bold; margin-bottom: 10px; }
+        .options label { display: block; font-weight: normal; margin: 5px 0; padding: 10px; background: #f1f5f9; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+        .options input { margin-right: 10px; }
+        .options label.correct { background: #dcfce7; border-color: #22c55e; color: #166534; font-weight: bold; }
+        .options label.wrong { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+        .transcript { display: none; background: #f1f5f9; padding: 15px; border-radius: 6px; margin-top: 20px; white-space: pre-wrap; font-size: 0.95rem; }
+    </style>
 </head>
 <body>
-<main>
-  <h1>TOEIC 聽力練習</h1>
-  <p class="hint" style="text-align:center">免費語音版：使用瀏覽器／裝置提供的語音，不呼叫 ElevenLabs，也不需要 API Key。</p>
 
-  <section class="card" id="setup-section">
-    <h2>載入測驗</h2>
-    <label for="fileInput">測驗檔（JSON 內容，可使用 .json 或以 JSON 格式儲存的 .txt）</label>
-    <input id="fileInput" type="file" accept=".txt,.json,application/json,text/plain">
-    <div class="settings-grid">
-      <div>
-        <label for="voiceA">說話者 A 語音</label>
-        <select id="voiceA"></select>
-      </div>
-      <div>
-        <label for="voiceB">說話者 B 語音</label>
-        <select id="voiceB"></select>
-      </div>
-      <div>
-        <label for="rate">語速：<span id="rateLabel">1.0×</span></label>
-        <input id="rate" type="range" min="0.75" max="1.15" step="0.05" value="1">
-        <p class="hint">TOEIC 練習建議先從 0.9–1.0× 開始。</p>
-      </div>
-      <div>
-        <label for="gap">句間停頓</label>
-        <select id="gap">
-          <option value="250">短（0.25 秒）</option>
-          <option value="500" selected>標準（0.5 秒）</option>
-          <option value="800">較長（0.8 秒）</option>
-        </select>
-      </div>
+<div class="container">
+    <h1>TOEIC 聽力生成器 <br><span style="font-size: 1rem; color: #64748b;">(自動備援架構)</span></h1>
+    
+    <div class="section">
+        <label>1. API 設定</label>
+        <input type="password" id="apiKey" placeholder="輸入 Gemini API Key (AIzaSy...)">
     </div>
-    <div class="actions">
-      <button id="loadBtn">載入測驗</button>
-      <button id="refreshVoicesBtn" class="secondary">重新載入語音清單</button>
+    
+    <div class="section">
+        <label>2. 載入對話與測驗檔案 (.txt)</label>
+        <input type="file" id="fileInput" accept=".txt" onchange="handleFileUpload(event)">
+        <button class="secondary" onclick="loadExample()">沒有檔案？載入預設範例測試</button>
     </div>
-    <div id="status" role="status" aria-live="polite">請先選擇測驗檔。若語音清單是空的，請確認裝置已安裝英文語音後再重新載入。</div>
-    <p class="hint">注意：部分裝置／瀏覽器的語音可能透過網路提供。此版本不會使用付費 TTS API，但不能保證每一種系統語音都完全離線。</p>
-  </section>
 
-  <section class="card" id="player-section">
-    <h2>聽力播放</h2>
-    <div class="actions">
-      <button id="playBtn">▶ 播放對話</button>
-      <button id="stopBtn" class="danger">停止</button>
+    <div class="section">
+        <label>3. 聽力生成與播放</label>
+        <button id="generateBtn" onclick="generateAllAudio()" disabled>生成聽力音檔 (僅耗1次配額)</button>
+        <div class="status" id="status">請先載入題目文字檔</div>
+        
+        <!-- 使用原生播放器以完美相容手機與修復解碼問題 -->
+        <audio id="audioPlayer" controls style="width: 100%; display: none; margin-top: 10px;"></audio>
     </div>
-    <p class="hint">語音由瀏覽器逐句合成；同一份測驗可重複播放，不會重複呼叫付費 TTS API。</p>
-  </section>
 
-  <section class="card" id="quiz-section">
-    <h2>測驗題目</h2>
-    <div id="questions-container"></div>
-    <button id="submitBtn">提交答案</button>
-  </section>
-
-  <section class="card" id="result-section">
-    <h2 id="score-display"></h2>
-    <button id="showTranscriptBtn" class="secondary">顯示／隱藏逐字稿</button>
-  </section>
-  <section class="card" id="transcript-section">
-    <h2>對話逐字稿</h2>
-    <div id="transcript-container"></div>
-  </section>
-</main>
+    <div class="quiz-container" id="quizContainer">
+        <div class="section">
+            <label>4. 測驗區</label>
+            <div id="quizArea"></div>
+            <button onclick="checkAnswers()" style="margin-top: 15px;">送出答案</button>
+        </div>
+        <div class="section" style="border: none;">
+            <button class="secondary" onclick="toggleTranscript()">顯示 / 隱藏 對話原文</button>
+            <div id="transcript" class="transcript"></div>
+        </div>
+    </div>
+</div>
 
 <script>
-(() => {
-  "use strict";
-  let testData = null;
-  let isPlaying = false;
-  let playToken = 0;
-  let availableVoices = [];
-  const $ = id => document.getElementById(id);
-  const status = $("status");
+    // 預先對應 Gemini 的人聲 (依據口音與性別配置)
+    const voiceMap = {
+        'Male_US': 'Puck', 'Female_US': 'Kore',
+        'Male_UK': 'Fenrir', 'Female_UK': 'Leda',
+        'Male_Aussie': 'Orus', 'Female_Aussie': 'Aoede'
+    };
 
-  function setStatus(message, kind = "") {
-    status.textContent = message;
-    status.className = kind;
-  }
+    let parsedData = null;
 
-  function loadVoices() {
-    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
-      setStatus("此瀏覽器不支援 Web Speech API。請改用支援語音合成的最新版 Chrome、Edge 或 Safari。", "error");
-      return;
-    }
-    availableVoices = window.speechSynthesis.getVoices();
-    const oldA = $("voiceA").value;
-    const oldB = $("voiceB").value;
-    for (const select of [$("voiceA"), $("voiceB")]) {
-      select.replaceChildren();
-      const english = availableVoices.filter(v => /^en(-|$)/i.test(v.lang));
-      const list = english.length ? english : availableVoices;
-      if (!list.length) {
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "尚未提供語音";
-        select.append(opt);
-        continue;
-      }
-      for (const voice of list) {
-        const opt = document.createElement("option");
-        opt.value = voice.voiceURI;
-        opt.textContent = `${voice.name} (${voice.lang})${voice.localService ? " · 裝置語音" : " · 可能使用網路"}`;
-        select.append(opt);
-      }
-    }
-    if ([...$("voiceA").options].some(o => o.value === oldA)) $("voiceA").value = oldA;
-    if ([...$("voiceB").options].some(o => o.value === oldB)) $("voiceB").value = oldB;
-    if (!$("voiceA").value && availableVoices.length) $("voiceA").selectedIndex = 0;
-    if (!$("voiceB").value && availableVoices.length) $("voiceB").selectedIndex = Math.min(1, $("voiceB").options.length - 1);
-    if (availableVoices.length) {
-      setStatus(`已找到 ${availableVoices.length} 種系統語音。請選擇 A、B 的英文語音，再載入測驗。`, "ok");
-    } else {
-      setStatus("目前沒有可用語音。部分手機會延遲載入語音，請按「重新載入語音清單」；仍無語音時，請在系統設定中安裝英文語音。", "error");
-    }
-  }
+    // --- 1. TXT 解析邏輯 ---
+    function parseTXT(text) {
+        let speakerA = { gender: 'Male', accent: 'US' };
+        let speakerB = { gender: 'Female', accent: 'UK' };
+        let dialogue = [];
+        let questions = [];
 
-  function validateTest(data) {
-    if (!data || !Array.isArray(data.dialogue) || !Array.isArray(data.questions)) {
-      throw new Error("測驗檔格式不正確：必須包含 dialogue 與 questions 陣列。");
-    }
-    data.dialogue.forEach((line, i) => {
-      if (!line || typeof line.text !== "string" || !line.text.trim()) {
-        throw new Error(`第 ${i + 1} 句對話缺少 text 文字。`);
-      }
-      if (!["A", "B"].includes(line.speaker)) {
-        throw new Error(`第 ${i + 1} 句 speaker 必須是 A 或 B。`);
-      }
-    });
-    data.questions.forEach((q, i) => {
-      if (!q || typeof q.question !== "string" || !Array.isArray(q.options) ||
-          !Number.isInteger(q.answer) || q.answer < 0 || q.answer >= q.options.length) {
-        throw new Error(`第 ${i + 1} 題格式不正確；answer 必須是 options 的零起始索引。`);
-      }
-    });
-  }
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        let section = '';
+        let currentQ = null;
 
-  function getVoice(speaker) {
-    const id = speaker === "A" ? $("voiceA").value : $("voiceB").value;
-    return availableVoices.find(v => v.voiceURI === id) || null;
-  }
-
-  function speak(text, voice, token) {
-    return new Promise((resolve, reject) => {
-      if (token !== playToken) return resolve();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = voice?.lang || "en-US";
-      if (voice) utterance.voice = voice;
-      utterance.rate = Number($("rate").value);
-      utterance.pitch = 1;
-      utterance.onend = () => resolve();
-      utterance.onerror = event => {
-        if (token !== playToken || event.error === "canceled" || event.error === "interrupted") resolve();
-        else reject(new Error(`語音播放失敗：${event.error || "unknown error"}`));
-      };
-      window.speechSynthesis.speak(utterance);
-    });
-  }
-
-  async function playDialogue() {
-    if (!testData || isPlaying) return;
-    if (!availableVoices.length) loadVoices();
-    if (!availableVoices.length) {
-      setStatus("找不到系統語音，無法播放。請重新載入語音清單或安裝英文語音。", "error");
-      return;
-    }
-    isPlaying = true;
-    const token = ++playToken;
-    $("playBtn").disabled = true;
-    $("playBtn").textContent = "播放中…";
-    setStatus("正在逐句播放對話。", "");
-    try {
-      for (let i = 0; i < testData.dialogue.length; i++) {
-        if (token !== playToken) break;
-        const line = testData.dialogue[i];
-        await speak(line.text, getVoice(line.speaker), token);
-        if (token !== playToken) break;
-        if (i < testData.dialogue.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, Number($("gap").value)));
+        for (let line of lines) {
+            if (line.match(/^\[.*\]$/)) {
+                section = line.toLowerCase();
+                continue;
+            }
+            if (section.includes('speaker') || section.includes('設定')) {
+                let m = line.match(/Speaker\s*(A|B):\s*(Male|Female)\s*,\s*(US|UK|Aussie)/i);
+                if (m) {
+                    let spk = { gender: m[2], accent: m[3] };
+                    if (m[1].toUpperCase() === 'A') speakerA = spk;
+                    else speakerB = spk;
+                }
+            } else if (section.includes('dialogue') || section.includes('對話')) {
+                let m = line.match(/^(A|B):\s*(.*)/);
+                if (m) dialogue.push({ speaker: m[1], text: m[2] });
+            } else if (section.includes('question') || section.includes('題目')) {
+                if (line.match(/^Q\d+:/i)) {
+                    if (currentQ) questions.push(currentQ);
+                    currentQ = { question: line, options: [], ans: '' };
+                } else if (line.match(/^[\(]?([A-D])[\)\.]?\s+(.*)/i)) {
+                    if (currentQ) {
+                        let m = line.match(/^[\(]?([A-D])[\)\.]?\s+(.*)/i);
+                        currentQ.options.push(`(${m[1].toUpperCase()}) ${m[2]}`);
+                    }
+                } else if (line.match(/^Ans:\s*([A-D])/i)) {
+                    if (currentQ) {
+                        currentQ.ans = line.match(/^Ans:\s*([A-D])/i)[1].toUpperCase();
+                        questions.push(currentQ);
+                        currentQ = null;
+                    }
+                }
+            }
         }
-      }
-      if (token === playToken) setStatus("播放完成。可再次播放或開始作答。", "ok");
-    } catch (error) {
-      setStatus(error.message, "error");
-    } finally {
-      if (token === playToken) {
-        isPlaying = false;
-        $("playBtn").disabled = false;
-        $("playBtn").textContent = "▶ 重新播放對話";
-      }
+        if (currentQ) questions.push(currentQ);
+        if (dialogue.length === 0) throw new Error("解析失敗：找不到對話內容");
+        return { speakerA, speakerB, dialogue, questions };
     }
-  }
 
-  function stopPlayback() {
-    playToken++;
-    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-    isPlaying = false;
-    $("playBtn").disabled = false;
-    $("playBtn").textContent = "▶ 播放對話";
-    setStatus("已停止播放。", "");
-  }
+    // --- 2. 核心工具：將 Base64 PCM / WAV 自動封裝成標準可播放的 WAV Blob ---
+    function base64ToWavBlob(base64Data, sampleRate = 24000) {
+        const binaryString = atob(base64Data);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
 
-  function renderQuiz(questions) {
-    const container = $("questions-container");
-    container.replaceChildren();
-    questions.forEach((q, qi) => {
-      const block = document.createElement("div");
-      block.className = "question";
-      const heading = document.createElement("h3");
-      heading.textContent = `${qi + 1}. ${q.question}`;
-      block.append(heading);
-      q.options.forEach((option, oi) => {
-        const label = document.createElement("label");
-        label.className = "option";
-        const input = document.createElement("input");
-        input.type = "radio";
-        input.name = `q${qi}`;
-        input.value = String(oi);
-        const text = document.createElement("span");
-        text.textContent = String(option);
-        label.append(input, text);
-        block.append(label);
-      });
-      container.append(block);
-    });
-  }
+        // 檢查前 4 個 Byte 是否已有 'RIFF'（若已有標頭直接返回）
+        if (bytes.length >= 4 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+            return new Blob([bytes], { type: 'audio/wav' });
+        }
 
-  function renderTranscript(dialogue) {
-    const container = $("transcript-container");
-    container.replaceChildren();
-    dialogue.forEach(line => {
-      const div = document.createElement("div");
-      div.className = "line";
-      const speaker = document.createElement("span");
-      speaker.className = `speaker-${line.speaker}`;
-      speaker.textContent = `${line.speaker}: `;
-      div.append(speaker, document.createTextNode(line.text));
-      container.append(div);
-    });
-  }
+        // 否則為原始 PCM，主動添加 44-byte WAV RIFF 標頭
+        const numChannels = 1, bitDepth = 16;
+        const byteRate = sampleRate * numChannels * (bitDepth / 8);
+        const blockAlign = numChannels * (bitDepth / 8);
+        const buffer = new ArrayBuffer(44 + bytes.length);
+        const view = new DataView(buffer);
 
-  $("loadBtn").addEventListener("click", async () => {
-    const file = $("fileInput").files[0];
-    if (!file) {
-      setStatus("請先選擇測驗檔。", "error");
-      return;
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+        }
+
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, 36 + bytes.length, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); 
+        view.setUint16(22, numChannels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, bytes.length, true);
+        
+        new Uint8Array(buffer, 44).set(bytes);
+        return new Blob([buffer], { type: 'audio/wav' });
     }
-    $("loadBtn").disabled = true;
-    try {
-      const raw = await file.text();
-      const parsed = JSON.parse(raw.replace(/^\uFEFF/, ""));
-      validateTest(parsed);
-      testData = parsed;
-      stopPlayback();
-      renderQuiz(testData.questions);
-      renderTranscript(testData.dialogue);
-      $("player-section").style.display = "block";
-      $("quiz-section").style.display = "block";
-      $("result-section").style.display = "none";
-      $("transcript-section").style.display = "none";
-      setStatus(`已載入 ${testData.dialogue.length} 句對話與 ${testData.questions.length} 題。語音會在播放時即時合成，不會產生付費 API 用量。`, "ok");
-    } catch (error) {
-      testData = null;
-      setStatus(`載入失敗：${error.message}`, "error");
-    } finally {
-      $("loadBtn").disabled = false;
+
+    // --- 3. 呼叫 Gemini 附帶「模型備援機制」 (Fallback Mechanism) ---
+    async function callGeminiMultiSpeakerTTS(dialogueText, voiceA, voiceB, apiKey) {
+        // 模型優先順序列表
+        const modelQueue = [
+            'gemini-3.8-flash-tts',
+            'gemini-3.8-flash-lite-tts',
+            'gemini-3.1-flash-tts-preview',
+            'gemini-2.5-pro-preview-tts',
+            'gemini-2.5-flash-preview-tts'
+        ];
+
+        const payload = {
+            contents: [{ parts: [{ text: dialogueText }] }],
+            generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                    multiSpeakerVoiceConfig: {
+                        speakerVoiceConfigs: [
+                            { speaker: "A", voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceA } } },
+                            { speaker: "B", voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceB } } }
+                        ]
+                    }
+                }
+            }
+        };
+
+        const statusEl = document.getElementById('status');
+        let lastError = null;
+
+        // 依序嘗試模型
+        for (const model of modelQueue) {
+            try {
+                statusEl.innerHTML = `正在呼叫 <span style="color:var(--primary)">${model}</span> ...`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errJson = await response.json().catch(() => ({}));
+                    throw new Error(errJson.error?.message || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
+                    throw new Error("API 成功連接，但未回傳音訊資料。");
+                }
+                
+                statusEl.innerHTML = `<span style="color:#10b981">成功！(${model})</span>`;
+                return data.candidates[0].content.parts[0].inlineData.data;
+
+            } catch (err) {
+                console.warn(`[備援機制] 模型 ${model} 失敗:`, err.message);
+                lastError = err;
+                // 發生錯誤則繼續執行迴圈，嘗試下一個模型
+            }
+        }
+
+        // 如果所有模型都失敗
+        throw new Error(`所有模型皆嘗試失敗。最後錯誤訊息: ${lastError.message}`);
     }
-  });
 
-  $("playBtn").addEventListener("click", playDialogue);
-  $("stopBtn").addEventListener("click", stopPlayback);
-  $("refreshVoicesBtn").addEventListener("click", loadVoices);
-  $("rate").addEventListener("input", () => $("rateLabel").textContent = `${Number($("rate").value).toFixed(2).replace(/0$/, "")}×`);
-  $("submitBtn").addEventListener("click", () => {
-    if (!testData) return;
-    let score = 0;
-    testData.questions.forEach((q, i) => {
-      const selected = document.querySelector(`input[name="q${i}"]:checked`);
-      if (selected && Number(selected.value) === q.answer) score++;
-    });
-    $("score-display").textContent = `測驗結果：${score} / ${testData.questions.length}（${Math.round(score / testData.questions.length * 100)}%）`;
-    $("result-section").style.display = "block";
-    $("result-section").scrollIntoView({behavior:"smooth", block:"start"});
-  });
-  $("showTranscriptBtn").addEventListener("click", () => {
-    const section = $("transcript-section");
-    section.style.display = section.style.display === "block" ? "none" : "block";
-  });
+    // --- 4. 生成音檔總控 ---
+    async function generateAllAudio() {
+        const apiKey = document.getElementById('apiKey').value.trim();
+        if (!apiKey) return alert("請輸入 API Key");
+        if (!parsedData) return alert("請先載入題目檔案");
+        
+        const btn = document.getElementById('generateBtn');
+        const status = document.getElementById('status');
+        const player = document.getElementById('audioPlayer');
 
-  if ("speechSynthesis" in window) {
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
-  } else {
-    setStatus("此瀏覽器不支援語音合成。請使用最新版 Safari、Chrome 或 Edge。", "error");
-  }
-})();
+        btn.disabled = true;
+        player.style.display = 'none';
+
+        try {
+            const voiceA = voiceMap[`${parsedData.speakerA.gender}_${parsedData.speakerA.accent}`] || 'Puck';
+            const voiceB = voiceMap[`${parsedData.speakerB.gender}_${parsedData.speakerB.accent}`] || 'Kore';
+
+            const fullDialogueText = parsedData.dialogue
+                .map(d => `${d.speaker}: ${d.text}`)
+                .join('\n');
+
+            // 呼叫具備援機制的 API
+            const b64 = await callGeminiMultiSpeakerTTS(fullDialogueText, voiceA, voiceB, apiKey);
+            
+            // 透過轉換器建立標準 WAV Blob URL
+            const wavBlob = base64ToWavBlob(b64, 24000);
+            
+            // 如果之前有舊的 URL，釋放記憶體
+            if(player.src) URL.revokeObjectURL(player.src);
+            const audioUrl = URL.createObjectURL(wavBlob);
+
+            // 綁定到原生播放器，準備播放
+            player.src = audioUrl;
+            player.style.display = 'block';
+            status.innerText += ' 音檔已就緒！請使用下方播放器播放。';
+            
+        } catch (err) {
+            status.innerText = '生成失敗，請檢查 API Key。';
+            alert("錯誤詳情: \n" + err.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // --- 5. UI 與測驗互動 ---
+    function handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                parsedData = parseTXT(e.target.result);
+                renderQuiz(parsedData.questions);
+                document.getElementById('status').innerText = '檔案載入成功，請點擊「生成聽力音檔」。';
+                document.getElementById('generateBtn').disabled = false;
+            } catch (err) {
+                document.getElementById('status').innerText = err.message;
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function renderQuiz(questions) {
+        const container = document.getElementById('quizArea');
+        container.innerHTML = '';
+        questions.forEach((q, qIndex) => {
+            let div = document.createElement('div');
+            div.className = 'question';
+            div.innerHTML = `<p>${q.question}</p>`;
+            let optDiv = document.createElement('div');
+            optDiv.className = 'options';
+            q.options.forEach((opt) => {
+                let val = opt.match(/^\(([A-D])\)/)[1];
+                optDiv.innerHTML += `
+                    <label id="label_q${qIndex}_${val}">
+                        <input type="radio" name="q${qIndex}" value="${val}"> ${opt}
+                    </label>`;
+            });
+            div.appendChild(optDiv);
+            container.appendChild(div);
+        });
+        document.getElementById('quizContainer').style.display = 'block';
+    }
+
+    function checkAnswers() {
+        let score = 0;
+        parsedData.questions.forEach((q, qIndex) => {
+            const radios = document.getElementsByName(`q${qIndex}`);
+            let selected = null;
+            radios.forEach(r => { if (r.checked) selected = r.value; });
+            
+            ['A','B','C','D'].forEach(opt => {
+                let el = document.getElementById(`label_q${qIndex}_${opt}`);
+                if (el) el.className = '';
+            });
+
+            if (selected === q.ans) {
+                score++;
+                document.getElementById(`label_q${qIndex}_${selected}`).classList.add('correct');
+            } else {
+                if (selected) document.getElementById(`label_q${qIndex}_${selected}`).classList.add('wrong');
+                if (document.getElementById(`label_q${qIndex}_${q.ans}`)) {
+                    document.getElementById(`label_q${qIndex}_${q.ans}`).classList.add('correct');
+                }
+            }
+        });
+        alert(`測驗結束！您的分數為：${score} / ${parsedData.questions.length}`);
+    }
+
+    function toggleTranscript() {
+        const ts = document.getElementById('transcript');
+        if (ts.style.display === 'none' || ts.style.display === '') {
+            ts.style.display = 'block';
+            ts.innerText = parsedData.dialogue.map(d => `${d.speaker}: ${d.text}`).join('\n\n');
+        } else {
+            ts.style.display = 'none';
+        }
+    }
+
+    function loadExample() {
+        const exampleTXT = `[Speaker Settings]
+Speaker A: Male, Aussie
+Speaker B: Female, US
+
+[Dialogue]
+A: Good morning! I'm calling about the graphic design position you advertised.
+B: Yes, of course. We are still accepting applications until this Friday. Have you sent your resume?
+A: I'm planning to send it today. Should I attach my portfolio as well?
+B: Yes, please include at least three samples of your recent work.
+
+[Questions]
+Q1: Why is the man calling?
+(A) To ask about a job opening
+(B) To apply for a loan
+(C) To sell software
+(D) To schedule an interview
+Ans: A
+
+Q2: What is the man asked to submit with his resume?
+(A) A reference letter
+(B) A cover letter
+(C) Three work samples
+(D) A business plan
+Ans: C`;
+        parsedData = parseTXT(exampleTXT);
+        renderQuiz(parsedData.questions);
+        document.getElementById('status').innerText = '範例載入成功！輸入 API Key 即可生成音檔。';
+        document.getElementById('generateBtn').disabled = false;
+    }
 </script>
 </body>
 </html>
