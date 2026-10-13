@@ -68,12 +68,7 @@
 </div>
 
 <script>
-    // 預先對應 Gemini 的人聲 (依據口音與性別配置)
-    const voiceMap = {
-        'Male_US': 'Puck', 'Female_US': 'Kore',
-        'Male_UK': 'Fenrir', 'Female_UK': 'Leda',
-        'Male_Aussie': 'Orus', 'Female_Aussie': 'Aoede'
-    };
+    // 音色依 Gemini Voice Library 的 language_code 與 gender 動態選取。
 
     let parsedData = null;
 
@@ -170,177 +165,137 @@
     }
 
     // --- 3. Gemini TTS：依錯誤類型控制 Fallback，避免無效 API 呼叫 ---
-    async function callGeminiMultiSpeakerTTS(dialogue, voiceA, voiceB, apiKey) {
-        // 目前官方多人 TTS 文件列出的模型。移除未列於目前多人 TTS 支援清單的
-        // gemini-2.5-flash-preview-tts，避免在所有備援都失敗時多打一個無效請求。
-        const modelQueue = [
-            'gemini-3.8-flash-tts',
-            'gemini-3.8-flash-lite-tts',
-            'gemini-3.1-flash-tts-preview',
-            'gemini-2.5-pro-preview-tts'
-        ];
+    // --- 3. 口音感知的 Gemini 3.8 TTS 與有限備援 ---
+    // 預建聲音名稱主要描述音色/表現，並不保證代表 US/UK/Australian 口音。
+    // 先從 Voices API 取得具語言地區與性別標記的聲音，再用 Interactions API 生成多人對話。
+    let voiceCatalogPromise = null;
+    let voiceCatalogApiKey = null;
+    const accentLocaleMap = {
+        US: { languageCode: 'en-US', label: 'American English' },
+        UK: { languageCode: 'en-GB', label: 'British English' },
+        Aussie: { languageCode: 'en-AU', label: 'Australian English' }
+    };
 
-        if (!Array.isArray(dialogue) || dialogue.length === 0) {
-            throw new Error('對話內容為空，無法生成音訊。');
+    async function getVoiceCatalog(apiKey) {
+        if (voiceCatalogApiKey !== apiKey) {
+            voiceCatalogApiKey = apiKey;
+            voiceCatalogPromise = null;
         }
-        if (!apiKey) {
-            throw new Error('缺少 Gemini API Key。');
+        if (!voiceCatalogPromise) {
+            voiceCatalogPromise = (async () => {
+                const response = await fetch('https://generativelanguage.googleapis.com/v1beta/voices?page_size=1000', {
+                    method: 'GET', headers: { 'x-goog-api-key': apiKey }
+                });
+                const raw = await response.text();
+                let data = {};
+                try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
+                if (!response.ok) {
+                    throw new Error(`無法取得 Gemini 聲音清單（HTTP ${response.status}）：${data?.error?.message || raw || '未知錯誤'}`);
+                }
+                return Array.isArray(data.voices) ? data.voices : [];
+            })().catch(err => { voiceCatalogPromise = null; voiceCatalogApiKey = null; throw err; });
         }
+        return voiceCatalogPromise;
+    }
 
-        // 每個發言回合都獨立成一個 Part，並以 speech_metadata 指定 speaker。
-        // 不再把「A: / B:」當成要朗讀的逐字稿內容。
-        const parts = dialogue.map((turn, index) => {
-            const speaker = String(turn.speaker || '').toUpperCase();
-            if (!['A', 'B'].includes(speaker) || !String(turn.text || '').trim()) {
-                throw new Error(`第 ${index + 1} 句對話格式錯誤：發言者必須是 A 或 B，且文字不可空白。`);
+    function resolveAccentVoice(gender, accent, voices) {
+        const normalizedGender = String(gender || '').toLowerCase();
+        const accentInfo = accentLocaleMap[accent];
+        if (!accentInfo) throw new Error(`不支援的口音設定：${accent}`);
+        const matches = voices.filter(v =>
+            String(v.language_code || '').toLowerCase() === accentInfo.languageCode.toLowerCase() &&
+            String(v.gender || '').toLowerCase() === normalizedGender
+        );
+        const selected = matches.find(v => String(v.type || '').toLowerCase() === 'prebuilt') || matches[0];
+        const voiceId = selected && (selected.id || selected.key || selected.display_name);
+        if (!voiceId) {
+            throw new Error(`Gemini Voice Library 找不到符合 ${accentInfo.label}、${normalizedGender} 聲線的聲音；為避免靜默退回錯誤口音，已停止生成。`);
+        }
+        return { voice: voiceId, label: selected.display_name || voiceId, accentLabel: accentInfo.label };
+    }
+
+    function extractInteractionAudio(data) {
+        if (data?.output_audio?.data) return data.output_audio.data;
+        const steps = Array.isArray(data?.steps) ? data.steps : [];
+        for (let i = steps.length - 1; i >= 0; i--) {
+            const content = Array.isArray(steps[i]?.content) ? steps[i].content : [];
+            for (let j = content.length - 1; j >= 0; j--) {
+                const item = content[j];
+                if ((item?.type === 'audio' || String(item?.mime_type || '').startsWith('audio/')) && item?.data) return item.data;
             }
-            return {
-                text: String(turn.text).trim(),
-                speech_metadata: { speaker }
-            };
-        });
+        }
+        return null;
+    }
 
+    async function callGeminiMultiSpeakerTTS(dialogue, speakerA, speakerB, apiKey) {
+        // Interactions API 的 schema 與舊版 GenerateContent 不同；為保證區域口音，
+        // 只在官方支援同一格式的 Gemini 3.8 TTS 模型間備援。
+        const modelQueue = ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'];
+        if (!Array.isArray(dialogue) || dialogue.length === 0) throw new Error('對話內容為空，無法生成音訊。');
+        if (!apiKey) throw new Error('缺少 Gemini API Key。');
+
+        const voices = await getVoiceCatalog(apiKey);
+        const voiceA = resolveAccentVoice(speakerA.gender, speakerA.accent, voices);
+        const voiceB = resolveAccentVoice(speakerB.gender, speakerB.accent, voices);
+        const content = dialogue.map((turn, index) => {
+            const speaker = String(turn.speaker || '').toUpperCase();
+            const text = String(turn.text || '').trim();
+            if (!['A', 'B'].includes(speaker) || !text) throw new Error(`第 ${index + 1} 句對話格式錯誤：發言者必須是 A 或 B，且文字不可空白。`);
+            return { type: 'text', text, annotations: [{ type: 'speech_metadata', speaker }] };
+        });
         const payload = {
-            contents: [{ role: 'user', parts }],
-            generationConfig: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                    multiSpeakerVoiceConfig: {
-                        speakerVoiceConfigs: [
-                            {
-                                speaker: 'A',
-                                voiceConfig: {
-                                    prebuiltVoiceConfig: { voiceName: voiceA }
-                                }
-                            },
-                            {
-                                speaker: 'B',
-                                voiceConfig: {
-                                    prebuiltVoiceConfig: { voiceName: voiceB }
-                                }
-                            }
-                        ]
-                    }
+            model: '',
+            input: [{ type: 'user_input', content }],
+            response_format: { type: 'audio' },
+            generation_config: {
+                speech_config: {
+                    mode: 'conversational',
+                    speakers: [{ speaker: 'A', voice: voiceA.voice }, { speaker: 'B', voice: voiceB.voice }]
                 }
             }
         };
 
         const statusEl = document.getElementById('status');
-        const attemptErrors = [];
-        let successfulResponseWithoutAudio = false;
-
-        // 這些通常是共通的請求／帳號問題；換模型不會修好它們。
-        const STOP_STATUSES = new Set([400, 401, 402, 403, 429]);
-        // 404 通常是該模型或資源不可用，可嘗試下一個模型；500/503 等為暫時性服務錯誤。
-        const FALLBACK_STATUSES = new Set([404, 408, 500, 502, 503, 504]);
-
-        function isClearlyModelScopedShortWindowLimit(errorObject, message) {
-            // 429 範圍不明時預設停止，因為它可能是專案 RPD、支出或其他共用配額。
-            // 只有 Google 的詳細 quota metadata 明確指出「按模型」的 RPM/TPM 限制，
-            // 才切換模型；單看 message 裡的模型名稱並不足以判定為 model-scoped。
-            const detailsText = JSON.stringify(errorObject?.details || []).toLowerCase();
-            const fullText = `${detailsText} ${String(message || '').toLowerCase()}`;
-            const modelScoped = /per[_ -]?model|permodel/.test(fullText);
-            const shortWindowLimit = /\brpm\b|\btpm\b|per[_ -]?minute|requests?\s+per\s+minute|tokens?\s+per\s+minute/.test(fullText);
-            const dailyOrSpendLimit = /\brpd\b|per[_ -]?day|requests?\s+per\s+day|daily|spend|prepay|credit balance/.test(fullText);
-            return modelScoped && shortWindowLimit && !dailyOrSpendLimit;
-        }
-
+        const errors = [];
         for (let index = 0; index < modelQueue.length; index++) {
             const model = modelQueue[index];
-            statusEl.textContent = `正在呼叫 ${model}（${index + 1}/${modelQueue.length}）…`;
-
+            statusEl.textContent = `口音：A ${voiceA.accentLabel}（${voiceA.label}）／B ${voiceB.accentLabel}（${voiceB.label}）；正在呼叫 ${model}（${index + 1}/${modelQueue.length}）…`;
             let response;
             try {
-                response = await fetch(
-                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-goog-api-key': apiKey
-                        },
-                        body: JSON.stringify(payload)
-                    }
-                );
+                payload.model = model;
+                response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                    body: JSON.stringify(payload)
+                });
             } catch (err) {
-                // TypeError 等通常代表離線、DNS、CORS 或網路層錯誤；重送相同請求到多個模型
-                // 不會修復共同的網路問題，且可能讓呼叫數難以預測，因此直接停止。
-                console.error(`[TTS] ${model} 網路層錯誤，停止備援。`, err);
-                const networkError = new Error(
-                    `連線 Gemini API 失敗，已停止備援以避免重複呼叫。請檢查網路、CORS 或瀏覽器環境。(${err.message || 'network error'})`
-                );
-                networkError.code = 'NETWORK_ERROR';
-                throw networkError;
+                throw new Error(`連線 Gemini API 失敗，已停止備援以避免重複呼叫：${err.message || 'network error'}`);
             }
-
-            let data = null;
-            let rawBody = '';
-            try {
-                rawBody = await response.text();
-                data = rawBody ? JSON.parse(rawBody) : {};
-            } catch (_) {
-                data = {};
-            }
-
+            const raw = await response.text();
+            let data = {};
+            try { data = raw ? JSON.parse(raw) : {}; } catch (_) {}
             if (!response.ok) {
                 const apiError = data?.error || {};
-                const apiMessage = apiError.message || rawBody || `HTTP ${response.status}`;
-                const errorCode = apiError.status || `HTTP_${response.status}`;
-                const detail = `${model}：HTTP ${response.status} ${errorCode} — ${apiMessage}`;
-                attemptErrors.push(detail);
-
-                console.warn(`[TTS] ${detail}`);
-
-                const modelScoped429 = response.status === 429 &&
-                    isClearlyModelScopedShortWindowLimit(apiError, apiMessage);
-                if (STOP_STATUSES.has(response.status) && !modelScoped429) {
-                    // 400 請求格式、401/403 鑑權或權限、402 帳單，以及範圍不明的 429：停止。
-                    throw new Error(`已停止備援，避免無效的連續 API 呼叫。\n${detail}`);
+                const detail = `${model}：HTTP ${response.status} ${apiError.status || ''} ${apiError.message || raw || '未知錯誤'}`;
+                errors.push(detail);
+                console.warn('[TTS]', detail);
+                if ([400, 401, 402, 403, 429].includes(response.status)) throw new Error(`已停止備援，避免不必要的連續 API 呼叫。\n${detail}`);
+                if (![404, 408, 500, 502, 503, 504].includes(response.status) || index === modelQueue.length - 1) {
+                    throw new Error(`TTS 生成失敗。\n${errors.join('\n')}`);
                 }
-
-                if (!FALLBACK_STATUSES.has(response.status) && !modelScoped429) {
-                    // 未明確列為可備援的錯誤，預設 fail-closed。
-                    throw new Error(`遇到未分類的 API 錯誤，已停止備援。\n${detail}`);
-                }
-
-                if (index < modelQueue.length - 1) {
-                    statusEl.textContent = `${model} 暫時不可用，改試下一個模型…`;
-                    if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
-                        // 對暫時性服務錯誤採用短版指數退避，避免連續敲擊服務端。
-                        const delayMs = Math.min(250 * (2 ** index), 1000) + Math.floor(Math.random() * 150);
-                        await new Promise(resolve => setTimeout(resolve, delayMs));
-                    }
-                    continue;
-                }
-                break;
-            }
-
-            const audioData = data?.candidates?.[0]?.content?.parts?.find(
-                part => part?.inlineData?.data || part?.inline_data?.data
-            );
-            const base64Audio = audioData?.inlineData?.data || audioData?.inline_data?.data;
-            if (base64Audio) {
-                statusEl.textContent = `成功！(${model})`;
-                return base64Audio;
-            }
-
-            successfulResponseWithoutAudio = true;
-            const finishReason = data?.candidates?.[0]?.finishReason || '未提供 finishReason';
-            const noAudioDetail = `${model}：HTTP 200，但回應中沒有 inlineData 音訊（finishReason: ${finishReason}）。`;
-            attemptErrors.push(noAudioDetail);
-            console.warn(`[TTS] ${noAudioDetail}`, data);
-
-            if (index < modelQueue.length - 1) {
-                statusEl.textContent = `${model} 未回傳音訊，改試下一個模型…`;
+                await new Promise(resolve => setTimeout(resolve, 250 * (2 ** index)));
                 continue;
             }
+            const audio = extractInteractionAudio(data);
+            if (audio) {
+                statusEl.textContent = `成功！${model}；A：${voiceA.accentLabel}（${voiceA.label}），B：${voiceB.accentLabel}（${voiceB.label}）`;
+                return audio;
+            }
+            errors.push(`${model}：HTTP 200，但回應中找不到音訊資料。`);
+            console.warn('[TTS] 回應中找不到音訊資料。', data);
+            if (index < modelQueue.length - 1) await new Promise(resolve => setTimeout(resolve, 250 * (2 ** index)));
         }
-
-        const headline = successfulResponseWithoutAudio
-            ? 'Gemini API 有回應，但未回傳可用音訊。'
-            : '所有可用的多人 TTS 模型皆失敗。';
-        throw new Error(`${headline}\n\n${attemptErrors.join('\n\n') || '沒有可供診斷的 API 錯誤內容。'}`);
+        throw new Error(`所有支援區域聲音的 TTS 模型皆失敗。\n${errors.join('\n')}`);
     }
 
     // --- 4. 生成音檔總控 ---
@@ -357,11 +312,10 @@
         player.style.display = 'none';
 
         try {
-            const voiceA = voiceMap[`${parsedData.speakerA.gender}_${parsedData.speakerA.accent}`] || 'Puck';
-            const voiceB = voiceMap[`${parsedData.speakerB.gender}_${parsedData.speakerB.accent}`] || 'Kore';
-
-            // 傳入結構化回合，由 TTS API 明確取得每句的 speaker metadata。
-            const b64 = await callGeminiMultiSpeakerTTS(parsedData.dialogue, voiceA, voiceB, apiKey);
+            // 依 TXT 的性別與口音，從 Gemini Voice Library 選取具地區標記的聲音。
+            const b64 = await callGeminiMultiSpeakerTTS(
+                parsedData.dialogue, parsedData.speakerA, parsedData.speakerB, apiKey
+            );
             
             // 透過轉換器建立標準 WAV Blob URL
             const wavBlob = base64ToWavBlob(b64, 24000);
