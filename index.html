@@ -36,7 +36,7 @@
     
     <div class="section">
         <label>1. API 設定</label>
-        <input type="password" id="apiKey" placeholder="輸入 Gemini API Key (AIzaSy...)">
+        <input type="password" id="apiKey" placeholder="輸入 Gemini API Key">
     </div>
     
     <div class="section">
@@ -47,7 +47,7 @@
 
     <div class="section">
         <label>3. 聽力生成與播放</label>
-        <button id="generateBtn" onclick="generateAllAudio()" disabled>生成聽力音檔 (僅耗1次配額)</button>
+        <button id="generateBtn" onclick="generateAllAudio()" disabled>生成聽力音檔（必要時切換備援模型）</button>
         <div class="status" id="status">請先載入題目文字檔</div>
         
         <!-- 使用原生播放器以完美相容手機與修復解碼問題 -->
@@ -169,26 +169,56 @@
         return new Blob([buffer], { type: 'audio/wav' });
     }
 
-    // --- 3. 呼叫 Gemini 附帶「模型備援機制」 (Fallback Mechanism) ---
-    async function callGeminiMultiSpeakerTTS(dialogueText, voiceA, voiceB, apiKey) {
-        // 模型優先順序列表
+    // --- 3. Gemini TTS：依錯誤類型控制 Fallback，避免無效 API 呼叫 ---
+    async function callGeminiMultiSpeakerTTS(dialogue, voiceA, voiceB, apiKey) {
+        // 目前官方多人 TTS 文件列出的模型。移除未列於目前多人 TTS 支援清單的
+        // gemini-2.5-flash-preview-tts，避免在所有備援都失敗時多打一個無效請求。
         const modelQueue = [
             'gemini-3.8-flash-tts',
             'gemini-3.8-flash-lite-tts',
             'gemini-3.1-flash-tts-preview',
-            'gemini-2.5-pro-preview-tts',
-            'gemini-2.5-flash-preview-tts'
+            'gemini-2.5-pro-preview-tts'
         ];
 
+        if (!Array.isArray(dialogue) || dialogue.length === 0) {
+            throw new Error('對話內容為空，無法生成音訊。');
+        }
+        if (!apiKey) {
+            throw new Error('缺少 Gemini API Key。');
+        }
+
+        // 每個發言回合都獨立成一個 Part，並以 speech_metadata 指定 speaker。
+        // 不再把「A: / B:」當成要朗讀的逐字稿內容。
+        const parts = dialogue.map((turn, index) => {
+            const speaker = String(turn.speaker || '').toUpperCase();
+            if (!['A', 'B'].includes(speaker) || !String(turn.text || '').trim()) {
+                throw new Error(`第 ${index + 1} 句對話格式錯誤：發言者必須是 A 或 B，且文字不可空白。`);
+            }
+            return {
+                text: String(turn.text).trim(),
+                speech_metadata: { speaker }
+            };
+        });
+
         const payload = {
-            contents: [{ parts: [{ text: dialogueText }] }],
+            contents: [{ role: 'user', parts }],
             generationConfig: {
-                responseModalities: ["AUDIO"],
+                responseModalities: ['AUDIO'],
                 speechConfig: {
                     multiSpeakerVoiceConfig: {
                         speakerVoiceConfigs: [
-                            { speaker: "A", voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceA } } },
-                            { speaker: "B", voiceConfig: { prebuiltVoiceConfig: { voiceName: voiceB } } }
+                            {
+                                speaker: 'A',
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: voiceA }
+                                }
+                            },
+                            {
+                                speaker: 'B',
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: voiceB }
+                                }
+                            }
                         ]
                     }
                 }
@@ -196,42 +226,121 @@
         };
 
         const statusEl = document.getElementById('status');
-        let lastError = null;
+        const attemptErrors = [];
+        let successfulResponseWithoutAudio = false;
 
-        // 依序嘗試模型
-        for (const model of modelQueue) {
+        // 這些通常是共通的請求／帳號問題；換模型不會修好它們。
+        const STOP_STATUSES = new Set([400, 401, 402, 403, 429]);
+        // 404 通常是該模型或資源不可用，可嘗試下一個模型；500/503 等為暫時性服務錯誤。
+        const FALLBACK_STATUSES = new Set([404, 408, 500, 502, 503, 504]);
+
+        function isClearlyModelScopedShortWindowLimit(errorObject, message) {
+            // 429 範圍不明時預設停止，因為它可能是專案 RPD、支出或其他共用配額。
+            // 只有 Google 的詳細 quota metadata 明確指出「按模型」的 RPM/TPM 限制，
+            // 才切換模型；單看 message 裡的模型名稱並不足以判定為 model-scoped。
+            const detailsText = JSON.stringify(errorObject?.details || []).toLowerCase();
+            const fullText = `${detailsText} ${String(message || '').toLowerCase()}`;
+            const modelScoped = /per[_ -]?model|permodel/.test(fullText);
+            const shortWindowLimit = /\brpm\b|\btpm\b|per[_ -]?minute|requests?\s+per\s+minute|tokens?\s+per\s+minute/.test(fullText);
+            const dailyOrSpendLimit = /\brpd\b|per[_ -]?day|requests?\s+per\s+day|daily|spend|prepay|credit balance/.test(fullText);
+            return modelScoped && shortWindowLimit && !dailyOrSpendLimit;
+        }
+
+        for (let index = 0; index < modelQueue.length; index++) {
+            const model = modelQueue[index];
+            statusEl.textContent = `正在呼叫 ${model}（${index + 1}/${modelQueue.length}）…`;
+
+            let response;
             try {
-                statusEl.innerHTML = `正在呼叫 <span style="color:var(--primary)">${model}</span> ...`;
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (!response.ok) {
-                    const errJson = await response.json().catch(() => ({}));
-                    throw new Error(errJson.error?.message || `HTTP ${response.status}`);
-                }
-
-                const data = await response.json();
-                if (!data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data) {
-                    throw new Error("API 成功連接，但未回傳音訊資料。");
-                }
-                
-                statusEl.innerHTML = `<span style="color:#10b981">成功！(${model})</span>`;
-                return data.candidates[0].content.parts[0].inlineData.data;
-
+                response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': apiKey
+                        },
+                        body: JSON.stringify(payload)
+                    }
+                );
             } catch (err) {
-                console.warn(`[備援機制] 模型 ${model} 失敗:`, err.message);
-                lastError = err;
-                // 發生錯誤則繼續執行迴圈，嘗試下一個模型
+                // TypeError 等通常代表離線、DNS、CORS 或網路層錯誤；重送相同請求到多個模型
+                // 不會修復共同的網路問題，且可能讓呼叫數難以預測，因此直接停止。
+                console.error(`[TTS] ${model} 網路層錯誤，停止備援。`, err);
+                const networkError = new Error(
+                    `連線 Gemini API 失敗，已停止備援以避免重複呼叫。請檢查網路、CORS 或瀏覽器環境。(${err.message || 'network error'})`
+                );
+                networkError.code = 'NETWORK_ERROR';
+                throw networkError;
+            }
+
+            let data = null;
+            let rawBody = '';
+            try {
+                rawBody = await response.text();
+                data = rawBody ? JSON.parse(rawBody) : {};
+            } catch (_) {
+                data = {};
+            }
+
+            if (!response.ok) {
+                const apiError = data?.error || {};
+                const apiMessage = apiError.message || rawBody || `HTTP ${response.status}`;
+                const errorCode = apiError.status || `HTTP_${response.status}`;
+                const detail = `${model}：HTTP ${response.status} ${errorCode} — ${apiMessage}`;
+                attemptErrors.push(detail);
+
+                console.warn(`[TTS] ${detail}`);
+
+                const modelScoped429 = response.status === 429 &&
+                    isClearlyModelScopedShortWindowLimit(apiError, apiMessage);
+                if (STOP_STATUSES.has(response.status) && !modelScoped429) {
+                    // 400 請求格式、401/403 鑑權或權限、402 帳單，以及範圍不明的 429：停止。
+                    throw new Error(`已停止備援，避免無效的連續 API 呼叫。\n${detail}`);
+                }
+
+                if (!FALLBACK_STATUSES.has(response.status) && !modelScoped429) {
+                    // 未明確列為可備援的錯誤，預設 fail-closed。
+                    throw new Error(`遇到未分類的 API 錯誤，已停止備援。\n${detail}`);
+                }
+
+                if (index < modelQueue.length - 1) {
+                    statusEl.textContent = `${model} 暫時不可用，改試下一個模型…`;
+                    if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
+                        // 對暫時性服務錯誤採用短版指數退避，避免連續敲擊服務端。
+                        const delayMs = Math.min(250 * (2 ** index), 1000) + Math.floor(Math.random() * 150);
+                        await new Promise(resolve => setTimeout(resolve, delayMs));
+                    }
+                    continue;
+                }
+                break;
+            }
+
+            const audioData = data?.candidates?.[0]?.content?.parts?.find(
+                part => part?.inlineData?.data || part?.inline_data?.data
+            );
+            const base64Audio = audioData?.inlineData?.data || audioData?.inline_data?.data;
+            if (base64Audio) {
+                statusEl.textContent = `成功！(${model})`;
+                return base64Audio;
+            }
+
+            successfulResponseWithoutAudio = true;
+            const finishReason = data?.candidates?.[0]?.finishReason || '未提供 finishReason';
+            const noAudioDetail = `${model}：HTTP 200，但回應中沒有 inlineData 音訊（finishReason: ${finishReason}）。`;
+            attemptErrors.push(noAudioDetail);
+            console.warn(`[TTS] ${noAudioDetail}`, data);
+
+            if (index < modelQueue.length - 1) {
+                statusEl.textContent = `${model} 未回傳音訊，改試下一個模型…`;
+                continue;
             }
         }
 
-        // 如果所有模型都失敗
-        throw new Error(`所有模型皆嘗試失敗。最後錯誤訊息: ${lastError.message}`);
+        const headline = successfulResponseWithoutAudio
+            ? 'Gemini API 有回應，但未回傳可用音訊。'
+            : '所有可用的多人 TTS 模型皆失敗。';
+        throw new Error(`${headline}\n\n${attemptErrors.join('\n\n') || '沒有可供診斷的 API 錯誤內容。'}`);
     }
 
     // --- 4. 生成音檔總控 ---
@@ -251,12 +360,8 @@
             const voiceA = voiceMap[`${parsedData.speakerA.gender}_${parsedData.speakerA.accent}`] || 'Puck';
             const voiceB = voiceMap[`${parsedData.speakerB.gender}_${parsedData.speakerB.accent}`] || 'Kore';
 
-            const fullDialogueText = parsedData.dialogue
-                .map(d => `${d.speaker}: ${d.text}`)
-                .join('\n');
-
-            // 呼叫具備援機制的 API
-            const b64 = await callGeminiMultiSpeakerTTS(fullDialogueText, voiceA, voiceB, apiKey);
+            // 傳入結構化回合，由 TTS API 明確取得每句的 speaker metadata。
+            const b64 = await callGeminiMultiSpeakerTTS(parsedData.dialogue, voiceA, voiceB, apiKey);
             
             // 透過轉換器建立標準 WAV Blob URL
             const wavBlob = base64ToWavBlob(b64, 24000);
@@ -271,7 +376,7 @@
             status.innerText += ' 音檔已就緒！請使用下方播放器播放。';
             
         } catch (err) {
-            status.innerText = '生成失敗，請檢查 API Key。';
+            status.innerText = '生成失敗；請查看錯誤詳情。';
             alert("錯誤詳情: \n" + err.message);
         } finally {
             btn.disabled = false;
