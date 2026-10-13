@@ -279,9 +279,23 @@
                 const detail = `${model}：HTTP ${response.status} ${apiError.status || ''} ${apiError.message || raw || '未知錯誤'}`;
                 errors.push(detail);
                 console.warn('[TTS]', detail);
-                if ([400, 401, 402, 403, 429].includes(response.status)) throw new Error(`已停止備援，避免不必要的連續 API 呼叫。\n${detail}`);
-                if (![404, 408, 500, 502, 503, 504].includes(response.status) || index === modelQueue.length - 1) {
-                    throw new Error(`TTS 生成失敗。\n${errors.join('\n')}`);
+
+                // 請求格式、API Key、付款/權限錯誤通常不會因換模型改善，直接停止。
+                if ([400, 401, 402, 403].includes(response.status)) {
+                    throw new Error(`此錯誤不適合切換模型重試，已停止備援。\n${errors.join('\n')}`);
+                }
+
+                // 429 可能是目前模型自己的 RPM/RPD 配額已滿；不重試同一模型，
+                // 僅嘗試一次佇列中的下一個模型。若備援模型也失敗，最終一併顯示錯誤。
+                const fallbackStatuses = [404, 408, 429, 500, 502, 503, 504];
+                if (!fallbackStatuses.includes(response.status) || index === modelQueue.length - 1) {
+                    throw new Error(`TTS 生成失敗；已嘗試所有可用備援模型。\n${errors.join('\n')}`);
+                }
+
+                if (response.status === 429) {
+                    statusEl.textContent = `${model} 遇到 HTTP 429（速率/額度限制），正在切換備援模型 ${modelQueue[index + 1]}…`;
+                } else {
+                    statusEl.textContent = `${model} 回應 HTTP ${response.status}，正在切換備援模型 ${modelQueue[index + 1]}…`;
                 }
                 await new Promise(resolve => setTimeout(resolve, 250 * (2 ** index)));
                 continue;
