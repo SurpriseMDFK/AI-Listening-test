@@ -296,10 +296,6 @@
                     statusEl.textContent = `${model} 遇到 HTTP 429（速率/額度限制），正在切換備援模型 ${modelQueue[index + 1]}…`;
                 } else {
                     statusEl.textContent = `${model} 回應 HTTP ${response.status}，正在切換備援模型 ${modelQueue[index + 1]}…`;
-                } else {
-                    statusEl.textContent = `${model} 回應 HTTP ${response.status}，正在切換備援模型 ${modelQueue[index + 1]}…`;
-                } else {
-                    statusEl.textContent = `${model} 回應 HTTP ${response.status}，正在切換備援模型 ${modelQueue[index + 1]}…`;
                 }
                 await new Promise(resolve => setTimeout(resolve, 250 * (2 ** index)));
                 continue;
